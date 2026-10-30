@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Prompt Picker",
+    "description": "Composer multi-select prompt picker: check several prompts to inject in order, each scoped to main / sub agents or both (Full Throttle built in)."
+  }
+}
