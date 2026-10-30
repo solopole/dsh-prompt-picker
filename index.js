@@ -158,6 +158,8 @@ class FullThrottleService {
     this.builtin = { id: BUILTIN_ID, name: '火力全开', text: instructionsOf(config), scope: 'both' }
     this.selectedIds = []
     this.prompts = [this.builtin]
+    /** Tail of the serialized write chain: one state-file write at a time. */
+    this.writeQueue = Promise.resolve()
     this.ready = this.restore()
   }
 
@@ -312,10 +314,26 @@ class FullThrottleService {
     return this.snapshot()
   }
 
-  /** Replace the state file through a same-directory rename; readers never see a torn file. The built-in row is code, not data. */
-  async persist() {
+  /**
+   * Replace the state file through a same-directory rename; readers never see a
+   * torn file. Writes are serialized through one chain, so overlapping
+   * toggle/update/delete calls cannot interleave their rename/unlink and leave the
+   * file holding an older snapshot than memory; each write also uses a unique
+   * temporary name, so two writers never clobber the same temporary file. The
+   * payload is serialized when the write runs, not when it is queued, so the last
+   * write always reflects the current in-memory rows. The built-in row is code,
+   * not data.
+   */
+  persist() {
+    const write = () => this.writeOnce()
+    this.writeQueue = this.writeQueue.then(write, write)
+    return this.writeQueue
+  }
+
+  /** One state-file write: unique temporary file, then an atomic rename. */
+  async writeOnce() {
     await mkdir(dirname(this.file), { recursive: true })
-    const temp = this.file + '.' + process.pid.toString(36) + '.tmp'
+    const temp = this.file + '.' + process.pid.toString(36) + '.' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + '.tmp'
     await writeFile(temp, JSON.stringify({
       selectedIds: this.selectedIds,
       prompts: this.prompts.filter((p) => p.id !== BUILTIN_ID),

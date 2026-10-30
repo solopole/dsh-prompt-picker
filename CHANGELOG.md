@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.1
+
+### Fixed
+
+- **Concurrent state writes no longer drift.** `persist()` used a temporary file
+  named only after `process.pid`, so overlapping `toggle` / `update` / `delete`
+  calls clobbered the same temporary file and raced their rename/unlink steps; the
+  in-memory `selectedIds` could then disagree with the state file until the next
+  successful write (the file never tore, and a reload took the disk as truth).
+  Writes are now serialized through one promise chain and each uses a unique
+  temporary name (`<pid>.<time>.<random>.tmp`); the payload is serialized when
+  the write runs, so the last write always reflects the current rows.
+
+### Changed
+
+- Documented the validation contract of `update`: an empty name or text answers
+  `400 rejected`, while an out-of-range `scope` falls back to `both` — the same
+  `scopeOf()` rule `add` has always applied, kept identical on purpose.
+- `test/edit-delete.test.mjs` now also covers 36 overlapping toggle/update calls
+  (memory must equal disk, no `.tmp` residue, a reload must agree) and the
+  documented scope fallback.
+
 ## 0.5.0
 
 ### Added

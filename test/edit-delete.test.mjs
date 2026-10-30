@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -109,6 +109,13 @@ try {
   res = await rpc(route, { action: 'update', id: added.id, scope: 'sub' })
   row = res.body.value.prompts.find((p) => p.id === added.id)
   assert.equal(row.scope, 'sub')
+
+  // an out-of-range scope falls back to 'both' (the documented scopeOf rule add
+  // already applies) and still answers 200 — rejections are reserved for empty fields
+  res = await rpc(route, { action: 'update', id: added.id, scope: 'nonsense' })
+  assert.equal(res.status, 200)
+  assert.equal(res.body.value.prompts.find((p) => p.id === added.id).scope, 'both')
+  await rpc(route, { action: 'update', id: added.id, scope: 'sub' })
 
   // on-disk state carries the edit
   assert.deepEqual(JSON.parse(await readFile(stateFile, 'utf8')).prompts, [
@@ -267,7 +274,7 @@ for (const key of ['editEntry', 'editTip', 'editTitle', 'editSave', 'deleteEntry
 }
 
 const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
-assert.equal(pkg.version, '0.5.0', 'the released version carries the new capability')
+assert.equal(pkg.version, '0.5.1', 'the released version carries the new capability and the write fix')
 
 // --- a temp DSH_HOME (env, no config override) is honored end to end ---
 const envHome = await mkdtemp(join(tmpdir(), 'prompt-picker-envhome-'))
@@ -293,6 +300,32 @@ try {
   else process.env.DSH_HOME = previousHome
   await rm(envHome, { recursive: true, force: true })
 }
+
+// --- 36 overlapping toggle/update calls: memory and disk must not drift ---
+const concHome = await mkdtemp(join(tmpdir(), 'prompt-picker-concurrent-'))
+const concCtx = fakeContext()
+plugin.apply(concCtx.ctx, { dshHome: concHome })
+const concService = concCtx.services.get('promptPicker')
+const raceIds = []
+for (let index = 0; index < 6; index += 1) {
+  const snapshot = await concService.add('R' + index, 'text ' + index, index % 3 === 0 ? 'main' : 'both')
+  raceIds.push(snapshot.prompts.find((p) => p.name === 'R' + index).id)
+}
+const ops = []
+for (let index = 0; index < 18; index += 1) {
+  ops.push(concService.toggle(raceIds[index % raceIds.length]))
+  ops.push(concService.update(raceIds[(index * 3) % raceIds.length], { name: 'N' + index }))
+}
+await Promise.all(ops)
+const memoryIds = (await concService.getState()).selectedIds
+const diskIds = JSON.parse(await readFile(join(concHome, 'prompt-picker.json'), 'utf8')).selectedIds
+assert.deepEqual(diskIds, memoryIds, 'serialized writes keep memory and disk identical under overlap')
+const leftovers = (await readdir(concHome)).filter((name) => name.endsWith('.tmp'))
+assert.deepEqual(leftovers, [], 'no temporary file is left behind')
+const concReload = fakeContext()
+plugin.apply(concReload.ctx, { dshHome: concHome })
+assert.deepEqual((await concReload.services.get('promptPicker').getState()).selectedIds, memoryIds, 'a reload after the overlap agrees with memory')
+await rm(concHome, { recursive: true, force: true })
 
   console.log('edit-delete.test.mjs: ok')
 } finally {

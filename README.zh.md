@@ -39,16 +39,16 @@ DeepSeek Harness 的提示词选择器:输入框工具栏一枚闪电图标,点�
    https://github.com/solopole/dsh-prompt-picker
    ```
 
-3. 点击 **安装**；完成后选择 **立即启用**。地址后也可以加标签：`#v0.5.0`。
+3. 点击 **安装**；完成后选择 **立即启用**。地址后也可以加标签：`#v0.5.1`。
 
-CLI 场景:`pnpm add -w "git+https://github.com/solopole/dsh-prompt-picker.git#v0.5.0"`。
+CLI 场景:`pnpm add -w "git+https://github.com/solopole/dsh-prompt-picker.git#v0.5.1"`。
 
 ## 使用
 
 - **勾选即注入**:按列表顺序、空行分隔,写入系统提示词的 `prompt-picker:prompts` 段(order 10150,位于官方指引之后、人格后缀之前);重启保持。
 - **作用域**:每条独立。「全部」= 主/子都注入;「主」= 仅主 agent;「子」= 仅子代理。判别依据是 agent 的**持久会话头** `context.agent.session.header`——与 `@deepseek-ai/dsh-subagent` 的 `delegationDepthOf()` 取值来源一致:会话级子代理创建时写入 `origin: 'subagent'`、`parentSession`、`delegationDepth ≥ 1`,并以 `AgentOptions.subagentDepth` 携带同一深度(头部数值是单调下限,重启续跑的子代理不会从零重算)。队友(teammate)会话也属于子代理。头部可读且 `delegationDepth: 0`、无 subagent 来源 ⇒ 主 agent(`why: "header:main"`);连头部都取不到时才降级为主 agent(`why: "default-main:no-header"`)。每次组装会向 `$DSH_HOME/prompt-picker-debug.log` 追加一行 JSON,含 `sub` 与 `why`(`origin=…` / `delegationDepth=…` / `header:main` / `default-main:no-header`;超 256 KiB 自动重置)。
 - **新增提示词**:名称 + 内容 + 作用域,保存后自动勾选。用户条目存于 `$DSH_HOME/prompt-picker.json`;删除该文件可整体重置(内置「火力全开」由代码提供,不受影响)。
-- **修改 / 删除**:铅笔把该行变成行内表单(名称 / 内容 / 作用域),经 `update` 动作保存,只改动你实际改过的字段,校验规则与新增一致;垃圾桶先弹二次确认,确认后经 `delete` 动作删除并同时取消勾选。内置「火力全开」不可修改、不可删除,如需换文案请用下面的 `instructions` 覆盖。
+- **修改 / 删除**:铅笔把该行变成行内表单(名称 / 内容 / 作用域),经 `update` 动作保存,只改动你实际改过的字段,校验规则与新增一致;垃圾桶先弹二次确认,确认后经 `delete` 动作删除并同时取消勾选。内置「火力全开」不可修改、不可删除,如需换文案请用下面的 `instructions` 覆盖。宿主端校验与新增一致:名称或内容为空 → `400 rejected`;作用域取 `both`/`main`/`sub` 之外的值 → 静默回落为 `both`(即 `scopeOf()` 对新增行的既有规则,两个动作保持一致)。
 - **替换内置条目文本**:在 profile 的 `cordis.patch.yml` 中覆盖该行配置(进阶用法,可选):
 
   ```yaml
@@ -66,6 +66,7 @@ CLI 场景:`pnpm add -w "git+https://github.com/solopole/dsh-prompt-picker.git#v
 
 ## 版本
 
+- **0.5.1** — 状态文件写入改为单链串行 + 唯一临时名,并发 toggle/update/delete 不再出现内存与磁盘不一致;并在文档中写明 `update` 的校验契约。
 - **0.5.0** — 已保存条目可原地修改/删除(每行铅笔 + 垃圾桶、行内表单、二次确认;宿主新增 `update`、`delete` 动作);作用域判别改读持久会话头,`main` 行不再漏进子 agent 与队友。
 - **0.4.0** — 更名发布为独立插件 dsh-prompt-picker;多选提示词 + 每条作用域 + 实心/空心闪电图标;宿主端同源 RPC。
 - 0.3.x / 0.1.0 — 前身 dsh-full-throttle 时代的版本线(单开关 → 多选选择器)。

@@ -45,9 +45,9 @@ no pencil, no trash.
    https://github.com/solopole/dsh-prompt-picker
    ```
 
-3. Click **Install**, then **Enable now**. A tag can be appended to the URL: `#v0.5.0`.
+3. Click **Install**, then **Enable now**. A tag can be appended to the URL: `#v0.5.1`.
 
-For CLI profiles: `pnpm add -w "git+https://github.com/solopole/dsh-prompt-picker.git#v0.5.0"`.
+For CLI profiles: `pnpm add -w "git+https://github.com/solopole/dsh-prompt-picker.git#v0.5.1"`.
 
 ## Usage
 
@@ -76,7 +76,11 @@ For CLI profiles: `pnpm add -w "git+https://github.com/solopole/dsh-prompt-picke
   host applies the same validation as adding a row. The trash asks for a second
   confirmation, then removes the row and unchecks it through the `delete` action.
   The built-in *Full Throttle* row cannot be edited or deleted; override its text
-  through `instructions` below instead.
+  through `instructions` below instead. Validation on the host matches adding a
+  row: an empty name or an empty text is rejected with `400 rejected`, while a
+  scope value outside `both` / `main` / `sub` falls back to `both`
+  (exactly what `scopeOf()` does for a new row) — the same fallback `add` has
+  always had, so the two actions stay consistent.
 - **Replace the built-in text**: override the row config in the profile's
   `cordis.patch.yml` (advanced, optional):
 
@@ -99,6 +103,9 @@ For CLI profiles: `pnpm add -w "git+https://github.com/solopole/dsh-prompt-picke
 
 ## Versions
 
+- **0.5.1** — state-file writes are serialized through one chain and use unique
+  temporary names, so overlapping toggle/update/delete calls can no longer leave
+  memory and disk disagreeing; documented the `update` validation contract.
 - **0.5.0** — edit and delete saved prompts in place (pencil + trash per row,
   inline edit form, delete confirmation; new host actions `update` and `delete`);
   scope detection now reads the durable session header, so `main`-scoped rows no
