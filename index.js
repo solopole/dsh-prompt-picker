@@ -4,7 +4,9 @@
  * State (a small JSON file under the harness home): the saved prompt list
  * (`{id, name, text, scope}`, scope = 'both' | 'main' | 'sub'), plus the
  * multi-select `selectedIds` — every selected row is injected, in list
- * order, separated by blank lines. One dynamic system-prompt section receives
+ * order, separated by blank lines. Rows are added, edited and deleted over
+ * the same RPC route; the built-in row is generated from config and can
+ * be neither edited nor deleted. One dynamic system-prompt section receives
  * the assembly context; rows whose scope excludes the assembling agent
  * (main agent vs sub-agent) are filtered out. Because the main/sub
  * discrimination rule is being calibrated, every assembly appends one JSON
@@ -93,26 +95,37 @@ function firstOf(keys, ...objects) {
 }
 
 /**
- * Decide whether this assembly belongs to a sub-agent. The assembly context's
- * shape is being calibrated (see the debug log); known discriminators are
- * delegationDepth (>0) and origin ('subagent' | 'spawn' | 'teammate').
- * Unknown shapes default to the main agent.
+ * Decide whether this assembly belongs to a sub-agent.
+ *
+ * The assembly context is `{agent, scope, signal}`; the authoritative
+ * discriminator lives on the agent's durable session header, exactly as
+ * @deepseek-ai/dsh-subagent's delegationDepthOf(agent) reads it: a
+ * session-backed child is created with header
+ * `{parentSession, origin: 'subagent', delegationDepth: n > 0}` and
+ * `AgentOptions.subagentDepth = n` (header value is the monotone floor, so
+ * a resumed child never counts from zero). A top-level session persists
+ * `delegationDepth: 0` and no origin. `context.session` is the assembly
+ * scope object, not the session — reading the header means going through
+ * `context.agent.session.header`.
+ *
+ * Order: header origin 'subagent'|'spawn'|'teammate' or delegationDepth > 0
+ * means sub-agent; a header that says depth 0 with no sub-agent origin means
+ * the main agent; only a context with no readable header at all falls back to
+ * the main agent, and `why` then says so explicitly.
  */
 function classifyAgent(context) {
-  const agent = context?.agent
-  const session = context?.session
-  const depthRaw = firstOf(['delegationDepth', 'depth'], context, agent, session)
-  const depth = Number(depthRaw)
-  const origin = firstOf(['origin', 'agentOrigin', 'spawnOrigin'], context, agent, session)
+  const agent = context?.agent ?? context?.scope
+  const header = agent?.session?.header
+  const options = agent?.options
+  const origin = firstOf(['origin', 'agentOrigin', 'spawnOrigin'], header, agent?.session, agent, context?.session, context)
+  const depthRaw = firstOf(['delegationDepth', 'subagentDepth', 'depth'], header, options, agent?.session, agent, context?.session, context)
+  const depth = depthRaw === undefined || depthRaw === null ? NaN : Number(depthRaw)
   const subSignals = []
-  if (Number.isFinite(depth) && depth > 0) subSignals.push('delegationDepth=' + depth)
   if (origin === 'subagent' || origin === 'spawn' || origin === 'teammate') subSignals.push('origin=' + origin)
-  const mainSignals = []
-  if (Number.isFinite(depth) && depth === 0) mainSignals.push('delegationDepth=0')
-  if (origin === undefined || origin === 'user' || origin === 'main' || origin === 'lead') mainSignals.push('origin=' + String(origin))
-  const sub = subSignals.length > 0
-  const why = sub ? subSignals.join(',') : mainSignals.length > 0 ? mainSignals.join(',') : 'default-main'
-  return { sub, why }
+  if (Number.isFinite(depth) && depth > 0) subSignals.push('delegationDepth=' + depth)
+  if (subSignals.length > 0) return { sub: true, why: subSignals.join(',') }
+  if (header !== null && typeof header === 'object') return { sub: false, why: 'header:main' }
+  return { sub: false, why: 'default-main:no-header' }
 }
 
 /** Compact, cycle-safe JSON of the assembly context for the calibration log. */
@@ -245,6 +258,60 @@ class FullThrottleService {
     return this.snapshot()
   }
 
+  /**
+   * Change one user row: name, text and/or scope. Only the fields present in the
+   * patch move; validation matches add (name trim <= 60 and non-empty, text
+   * non-empty, scope through scopeOf). The built-in row is code, not data.
+   */
+  async update(id, patch) {
+    await this.ready
+    if (typeof id !== 'string' || id.length === 0) throw new Error('id must be a string')
+    const row = this.prompts.find((p) => p.id === id)
+    if (row === undefined) throw new Error('unknown prompt id')
+    if (id === BUILTIN_ID) throw new Error('the built-in row ' + BUILTIN_ID + ' is read-only')
+    const change = patch !== null && typeof patch === 'object' ? patch : {}
+    const next = {
+      name: change.name === undefined ? row.name : typeof change.name === 'string' ? change.name.trim().slice(0, 60) : '',
+      text: change.text === undefined ? row.text : typeof change.text === 'string' ? change.text.trim() : '',
+      scope: change.scope === undefined ? row.scope : scopeOf(change.scope),
+    }
+    if (change.name !== undefined && next.name === '') throw new Error('name is empty')
+    if (change.text !== undefined && next.text === '') throw new Error('text is empty')
+    if (next.name === row.name && next.text === row.text && next.scope === row.scope) return this.snapshot()
+    const previous = { name: row.name, text: row.text, scope: row.scope }
+    row.name = next.name
+    row.text = next.text
+    row.scope = next.scope
+    try {
+      await this.persist()
+    } catch (error) {
+      row.name = previous.name
+      row.text = previous.text
+      row.scope = previous.scope
+      throw error
+    }
+    return this.snapshot()
+  }
+
+  /** Remove one user row; it leaves the multi-select with it. The built-in row survives every state file. */
+  async delete(id) {
+    await this.ready
+    if (typeof id !== 'string' || id.length === 0) throw new Error('id must be a string')
+    if (id === BUILTIN_ID) throw new Error('the built-in row ' + BUILTIN_ID + ' cannot be deleted')
+    if (!this.prompts.some((p) => p.id === id)) throw new Error('unknown prompt id')
+    const previous = { prompts: this.prompts, selectedIds: [...this.selectedIds] }
+    this.prompts = this.prompts.filter((p) => p.id !== id)
+    this.selectedIds = this.selectedIds.filter((x) => x !== id)
+    try {
+      await this.persist()
+    } catch (error) {
+      this.prompts = previous.prompts
+      this.selectedIds = previous.selectedIds
+      throw error
+    }
+    return this.snapshot()
+  }
+
   /** Replace the state file through a same-directory rename; readers never see a torn file. The built-in row is code, not data. */
   async persist() {
     await mkdir(dirname(this.file), { recursive: true })
@@ -305,7 +372,7 @@ async function readBody(req, maxBytes = 256 * 1024) {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-/** Same-origin RPC the browser half calls: GET = state, POST = toggle|clear|add|setScope. */
+/** Same-origin RPC the browser half calls: GET = state, POST = toggle|clear|add|setScope|update|delete. */
 class RpcBackend {
   constructor(service) {
     this.service = service
@@ -350,6 +417,10 @@ class RpcBackend {
         this.responseJson(res, 200, { ok: true, value: await this.service.add(body.name, body.text, body.scope) })
       } else if (body?.action === 'setScope') {
         this.responseJson(res, 200, { ok: true, value: await this.service.setScope(body.id, body.scope) })
+      } else if (body?.action === 'update') {
+        this.responseJson(res, 200, { ok: true, value: await this.service.update(body.id, { name: body.name, text: body.text, scope: body.scope }) })
+      } else if (body?.action === 'delete') {
+        this.responseJson(res, 200, { ok: true, value: await this.service.delete(body.id) })
       } else {
         this.responseJson(res, 400, { ok: false, error: { code: 'invalid-request', message: 'unsupported action' } })
       }

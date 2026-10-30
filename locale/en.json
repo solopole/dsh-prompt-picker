@@ -1,6 +1,17 @@
 {
   "meta": {
     "title": "Prompt Picker",
-    "description": "Composer multi-select prompt picker: check several prompts to inject in order, each scoped to main / sub agents or both (Full Throttle built in)."
+    "description": "Composer multi-select prompt picker: check several prompts to inject in order, each scoped to main / sub agents or both (Full Throttle built in), and edit or delete saved prompts in place."
+  },
+  "actions": {
+    "edit": "Edit",
+    "editTip": "Edit this prompt",
+    "editTitle": "Edit prompt",
+    "save": "Save changes",
+    "delete": "Delete",
+    "deleteTip": "Delete this prompt",
+    "deleteTitle": "Delete prompt",
+    "deleteBody": "This cannot be undone, and the row is unchecked too.",
+    "deleteConfirm": "Delete"
   }
 }

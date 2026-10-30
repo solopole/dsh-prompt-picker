@@ -5,7 +5,8 @@ English | [中文](README.zh.md)
 A prompt picker for DeepSeek Harness: one bolt icon in the composer toolbar opens a
 multi-select menu of system-prompt injections. Ships with the built-in **Full Throttle**
 row (default text below); add and save as many rows as you like, each with its own
-injection scope (both / main agent only / sub-agents only).
+injection scope (both / main agent only / sub-agents only) — and edit or delete the
+saved ones in place.
 
 > We are a well-funded large-model company. Your token budget is unlimited — do not
 > hold back. Completing the task at a high standard always comes first.
@@ -22,7 +23,10 @@ A single bolt icon: hollow outline while idle, solid fill while ≥1 row is inje
 | ![off](docs/preview-bolt-off.svg) | ![on](docs/preview-bolt-on.svg) |
 
 Menu: checked rows inject; the chip at the end of each row cycles its scope
-(all → main → sub); footer offers "Uncheck all" and "New prompt…".
+(all → main → sub); every saved row also carries a pencil (edit it in place) and a
+trash (delete it, after a confirmation); footer offers "Uncheck all" and
+"New prompt…". The built-in row is generated from config, so it is read-only:
+no pencil, no trash.
 
 <details><summary>Legacy appearance (labeled button with a status dot, 0.1-era screenshots)</summary>
 
@@ -41,9 +45,9 @@ Menu: checked rows inject; the chip at the end of each row cycles its scope
    https://github.com/solopole/dsh-prompt-picker
    ```
 
-3. Click **Install**, then **Enable now**. A tag can be appended to the URL: `#v0.4.0`.
+3. Click **Install**, then **Enable now**. A tag can be appended to the URL: `#v0.5.0`.
 
-For CLI profiles: `pnpm add -w "git+https://github.com/solopole/dsh-prompt-picker.git#v0.4.0"`.
+For CLI profiles: `pnpm add -w "git+https://github.com/solopole/dsh-prompt-picker.git#v0.5.0"`.
 
 ## Usage
 
@@ -51,12 +55,28 @@ For CLI profiles: `pnpm add -w "git+https://github.com/solopole/dsh-prompt-picke
   lines, into the `prompt-picker:prompts` system-prompt section (order 10150, after
   first-party guidance and before the persona suffix). State survives restarts.
 - **Scopes** are per row: *both* injects everywhere; *main* only into the main agent;
-  *sub* only into sub-agents. Sub-agents are detected via `delegationDepth > 0` or
-  `origin ∈ {subagent, spawn, teammate}`; each assembly appends one JSON line to
-  `$DSH_HOME/prompt-picker-debug.log` for calibration (auto-resets past 256 KiB).
+  *sub* only into sub-agents. The discriminator is the agent's **durable session
+  header**, `context.agent.session.header` — the same source
+  `delegationDepthOf()` uses in `@deepseek-ai/dsh-subagent`: a session-backed
+  child is created with `origin: 'subagent'`, `parentSession` and
+  `delegationDepth ≥ 1`, with `AgentOptions.subagentDepth` carrying the same
+  depth (the header value is the monotone floor, so a resumed child never counts
+  from zero). Teammate sessions are sub-agents too. A readable header with
+  `delegationDepth: 0` and no sub-agent origin marks the main agent
+  (`why: "header:main"`); only an assembly with no readable header at all
+  degrades to the main agent (`why: "default-main:no-header"`). Each assembly
+  appends one JSON line to `$DSH_HOME/prompt-picker-debug.log` with `sub` and
+  `why` (`origin=…`, `delegationDepth=…`, `header:main`, or
+  `default-main:no-header`; auto-resets past 256 KiB).
 - **New prompts**: name + text + scope, saved and auto-checked. User rows live in
   `$DSH_HOME/prompt-picker.json`; delete the file to reset (the built-in row is code,
   not data).
+- **Edit / delete**: the pencil turns a row into an inline form (name, text, scope)
+  and saves through the `update` action — only the fields you touch move, and the
+  host applies the same validation as adding a row. The trash asks for a second
+  confirmation, then removes the row and unchecks it through the `delete` action.
+  The built-in *Full Throttle* row cannot be edited or deleted; override its text
+  through `instructions` below instead.
 - **Replace the built-in text**: override the row config in the profile's
   `cordis.patch.yml` (advanced, optional):
 
@@ -72,12 +92,17 @@ For CLI profiles: `pnpm add -w "git+https://github.com/solopole/dsh-prompt-picke
 - Themes like **PRTS** restyle composer buttons with `!important`; this plugin
   neutralizes that with an id-scoped `!important` so the on state stays neutral —
   state is carried by the bolt's solid/hollow shape.
-- Browser and host halves talk over a same-origin RPC (`/_dsh/prompt-picker/rpc`);
+- Browser and host halves talk over a same-origin RPC (`/_dsh/prompt-picker/rpc`,
+  actions `toggle`, `clear`, `add`, `setScope`, `update`, `delete`);
   no external network requests, no telemetry, no session-data access.
 - Bundled zh/en dictionaries; the plugin-manager title and description are localized.
 
 ## Versions
 
+- **0.5.0** — edit and delete saved prompts in place (pencil + trash per row,
+  inline edit form, delete confirmation; new host actions `update` and `delete`);
+  scope detection now reads the durable session header, so `main`-scoped rows no
+  longer leak into sub-agents and teammates.
 - **0.4.0** — published as the standalone plugin dsh-prompt-picker; multi-select
   prompts + per-row scopes + solid/hollow bolt icon; same-origin host RPC.
 - 0.3.x / 0.1.0 — earlier releases under the previous dsh-full-throttle identity
