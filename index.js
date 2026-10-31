@@ -5,7 +5,7 @@
  * (`{id, name, text, scope}`, scope = 'both' | 'main' | 'sub'), plus the
  * multi-select `selectedIds` — every selected row is injected, in list
  * order, separated by blank lines. Rows are added, edited and deleted over
- * the same RPC route (every user row at once through `deleteAll`); the
+ * the same RPC route; the
  * built-in row is generated from config, can be edited like any row — the
  * edit persists as a `builtin` override in the state file and disappears
  * again once the row is back to its generated default — but cannot be
@@ -69,9 +69,9 @@ function scopeOf(value) {
   return SCOPES.includes(value) ? value : 'both'
 }
 
-/** Saved rows: the built-in first, then validated user rows from the state file. */
-function promptsOf(parsed, builtin) {
-  const list = [builtin]
+/** Saved rows: the built-in first (unless the user deleted it), then validated user rows from the state file. */
+function promptsOf(parsed, builtin, skipBuiltin) {
+  const list = skipBuiltin === true ? [] : [builtin]
   if (Array.isArray(parsed?.prompts)) {
     for (const item of parsed.prompts) {
       if (
@@ -176,6 +176,8 @@ class FullThrottleService {
     this.builtin = { id: BUILTIN_ID, name: '火力全开', text: instructionsOf(config), scope: 'both' }
     /** The freshly generated built-in row; a persisted override is measured against it. */
     this.builtinDefault = { name: this.builtin.name, text: this.builtin.text, scope: this.builtin.scope }
+    /** True once the user deleted the built-in row: it is regenerated from config, so the deletion itself is state. */
+    this.builtinDeleted = false
     this.selectedIds = []
     this.prompts = [this.builtin]
     /** Tail of the serialized write chain: one state-file write at a time. */
@@ -186,8 +188,9 @@ class FullThrottleService {
   async restore() {
     try {
       const parsed = JSON.parse(await readFile(this.file, 'utf8'))
+      this.builtinDeleted = parsed?.builtinDeleted === true
       this.applyBuiltinOverride(parsed?.builtin)
-      this.prompts = promptsOf(parsed, this.builtin)
+      this.prompts = promptsOf(parsed, this.builtin, this.builtinDeleted)
       this.selectedIds = selectedOf(parsed, this.prompts)
     } catch (error) {
       if (error?.code !== 'ENOENT') this.warn('restore', error)
@@ -294,7 +297,7 @@ class FullThrottleService {
    * built-in row alike — a built-in edit persists as a `builtin` override
    * (see writeOnce) and rolls back on a failed write. Only the fields present
    * in the patch move; validation matches add (name trim <= 60 and non-empty,
-   * text non-empty, scope through scopeOf). The built-in row stays undeletable.
+   * text non-empty, scope through scopeOf).
    */
   async update(id, patch) {
     await this.ready
@@ -325,43 +328,26 @@ class FullThrottleService {
     return this.snapshot()
   }
 
-  /** Remove one user row; it leaves the multi-select with it. The built-in row survives every state file. */
+  /**
+   * Remove one row, built-in included; it leaves the multi-select with it.
+   * Deleting the built-in row sets `builtinDeleted` in the state file — the
+   * row is regenerated from config on every load, so the deletion itself is
+   * the state that must survive a restart.
+   */
   async delete(id) {
     await this.ready
     if (typeof id !== 'string' || id.length === 0) throw new Error('id must be a string')
-    if (id === BUILTIN_ID) throw new Error('the built-in row ' + BUILTIN_ID + ' cannot be deleted')
     if (!this.prompts.some((p) => p.id === id)) throw new Error('unknown prompt id')
-    const previous = { prompts: this.prompts, selectedIds: [...this.selectedIds] }
+    const previous = { prompts: this.prompts, selectedIds: [...this.selectedIds], builtinDeleted: this.builtinDeleted }
     this.prompts = this.prompts.filter((p) => p.id !== id)
     this.selectedIds = this.selectedIds.filter((x) => x !== id)
+    if (id === BUILTIN_ID) this.builtinDeleted = true
     try {
       await this.persist()
     } catch (error) {
       this.prompts = previous.prompts
       this.selectedIds = previous.selectedIds
-      throw error
-    }
-    return this.snapshot()
-  }
-
-  /**
-   * Remove every user row at once, unchecking each; the built-in row is code,
-   * not data, so it (and its own checked state) survives. A no-op when nothing
-   * is saved — one persist, one atomic rename.
-   */
-  async deleteAll() {
-    await this.ready
-    const userRows = this.prompts.filter((p) => p.id !== BUILTIN_ID)
-    if (userRows.length === 0) return this.snapshot()
-    const previous = { prompts: this.prompts, selectedIds: [...this.selectedIds] }
-    const removed = new Set(userRows.map((p) => p.id))
-    this.prompts = this.prompts.filter((p) => p.id === BUILTIN_ID)
-    this.selectedIds = this.selectedIds.filter((id) => !removed.has(id))
-    try {
-      await this.persist()
-    } catch (error) {
-      this.prompts = previous.prompts
-      this.selectedIds = previous.selectedIds
+      this.builtinDeleted = previous.builtinDeleted
       throw error
     }
     return this.snapshot()
@@ -388,7 +374,8 @@ class FullThrottleService {
    * built-in row persists only as a `builtin` override while it differs from
    * the generated default, so an uncustomized row never shadows the config
    * `instructions` that generated it, and editing back to the default drops
-   * the override key entirely.
+   * the override key entirely. Deleting the built-in row persists as
+   * `builtinDeleted: true` instead.
    */
   async writeOnce() {
     await mkdir(dirname(this.file), { recursive: true })
@@ -397,7 +384,9 @@ class FullThrottleService {
       selectedIds: this.selectedIds,
       prompts: this.prompts.filter((p) => p.id !== BUILTIN_ID),
     }
-    if (
+    if (this.builtinDeleted) {
+      payload.builtinDeleted = true
+    } else if (
       this.builtin.name !== this.builtinDefault.name ||
       this.builtin.text !== this.builtinDefault.text ||
       this.builtin.scope !== this.builtinDefault.scope
@@ -467,7 +456,7 @@ async function readBody(req, maxBytes = 256 * 1024) {
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1'])
 
 /**
- * Same-origin RPC the browser half calls: GET = state, POST = toggle|clear|add|setScope|update|delete|deleteAll.
+ * Same-origin RPC the browser half calls: GET = state, POST = toggle|clear|add|setScope|update|delete.
  * Cross-site callers are rejected before anything is read: a browser can be
  * made to POST `text/plain` JSON at this port from any webpage, so Origin
  * (when present) must equal the server's own origin, Host must be loopback
@@ -546,8 +535,6 @@ class RpcBackend {
         this.responseJson(res, 200, { ok: true, value: await this.service.update(body.id, { name: body.name, text: body.text, scope: body.scope }) })
       } else if (body?.action === 'delete') {
         this.responseJson(res, 200, { ok: true, value: await this.service.delete(body.id) })
-      } else if (body?.action === 'deleteAll') {
-        this.responseJson(res, 200, { ok: true, value: await this.service.deleteAll() })
       } else {
         this.responseJson(res, 400, { ok: false, error: { code: 'invalid-request', message: 'unsupported action' } })
       }

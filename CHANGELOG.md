@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.10.0
+
+### Changed
+
+- **「全清」now unchecks everything instead of deleting.** Clear all only
+  clears the multi-select (nothing is removed, no confirmation needed);
+  deleting rows happens per-row through the delete button. The `deleteAll`
+  RPC action is gone.
+- **Unified New/Edit flow.** The footer button is renamed「新增/修改」(New/Edit)
+  and expands directly into 新增提示词 / 修改提示词; all editing happens in the
+  shared modal. The per-row pencil and the inline editor are removed.
+- **Deletion moved into the edit dialog.** Menu rows carry no per-row buttons;
+  the edit modal gains a「删除此提示词」danger button (second confirmation
+  unchanged).
+
+### Fixed
+
+- **Every row is deletable, the built-in one included.** `delete` accepts the
+  built-in id; the deletion persists as `builtinDeleted: true` in the state
+  file (the row is regenerated from config on load, so the deletion itself is
+  state) and survives restarts. An empty list renders one blank row so the
+  menu keeps its shape, and injects nothing.
+
 ## 0.9.0
 
 ### Fixed

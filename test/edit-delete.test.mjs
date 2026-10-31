@@ -180,10 +180,6 @@ try {
   assert.equal(res.body.error.code, 'rejected')
   assert.match(res.body.error.message, /name is empty/)
 
-  res = await rpc(route, { action: 'delete', id: 'full-throttle' })
-  assert.equal(res.status, 400)
-  assert.match(res.body.error.message, /built-in row full-throttle cannot be deleted/)
-
   res = await rpc(route, { action: 'delete', id: 'nope' })
   assert.equal(res.status, 400)
   assert.match(res.body.error.message, /unknown prompt id/)
@@ -198,30 +194,6 @@ try {
   assert.deepEqual(res.body.value.prompts.map((p) => p.id), ['full-throttle'])
   assert.deepEqual(res.body.value.selectedIds, [], 'delete also unchecks the row')
   assert.equal(res.body.value.enabled, false)
-  assert.deepEqual(JSON.parse(await readFile(stateFile, 'utf8')), { selectedIds: [], prompts: [] })
-
-  // --- deleteAll removes every user row at once; the built-in row and its own checked state stay ---
-  res = await rpc(route, { action: 'add', name: 'Bulk one', text: 'Bulk text 1.', scope: 'main' })
-  const bulk1 = res.body.value.prompts.find((p) => p.name === 'Bulk one')
-  res = await rpc(route, { action: 'add', name: 'Bulk two', text: 'Bulk text 2.', scope: 'sub' })
-  const bulk2 = res.body.value.prompts.find((p) => p.name === 'Bulk two')
-  await service.toggle('full-throttle')
-  assert.deepEqual((await service.getState()).selectedIds, [bulk1.id, bulk2.id, 'full-throttle'], 'two rows plus the built-in are checked')
-
-  res = await rpc(route, { action: 'deleteAll' })
-  assert.equal(res.status, 200)
-  assert.deepEqual(res.body.value.prompts.map((p) => p.id), ['full-throttle'], 'deleteAll keeps only the built-in row')
-  assert.deepEqual(res.body.value.selectedIds, ['full-throttle'], 'the built-in row keeps its own checked state')
-  assert.equal(res.body.value.enabled, true)
-  assert.deepEqual(JSON.parse(await readFile(stateFile, 'utf8')), { selectedIds: ['full-throttle'], prompts: [] })
-
-  // a second deleteAll on an empty list is a no-op that still answers 200
-  res = await rpc(route, { action: 'deleteAll' })
-  assert.equal(res.status, 200)
-  assert.deepEqual(res.body.value.selectedIds, ['full-throttle'])
-
-  // leave the file the way the reload block below expects it
-  await service.toggle('full-throttle')
   assert.deepEqual(JSON.parse(await readFile(stateFile, 'utf8')), { selectedIds: [], prompts: [] })
 
   // --- cross-site callers are refused before anything is read ---
@@ -345,14 +317,41 @@ try {
 
   // service-level guards mirror the RPC surface
   await assert.rejects(() => scoped.update('nope', { name: 'x' }), /unknown prompt id/)
-  await assert.rejects(() => scoped.delete('full-throttle'), /cannot be deleted/)
   await assert.rejects(() => scoped.delete('nope'), /unknown prompt id/)
   const remaining = (await scoped.getState()).prompts.map((p) => p.id)
   for (const id of [bothId, mainId, subId]) assert.ok(remaining.includes(id), 'the scope rows are still listed')
 
+  // --- every row is deletable, the built-in included; the deletion is state, not absence ---
+  const delHome = await mkdtemp(join(tmpdir(), 'prompt-picker-builtin-del-'))
+  const delCtx = fakeContext()
+  plugin.apply(delCtx.ctx, { dshHome: delHome })
+  delCtx.spawnAgent()
+  const delRoute = delCtx.routes[0]
+  res = await rpc(delRoute, { action: 'toggle', id: 'full-throttle' })
+  assert.equal(res.status, 200)
+  res = await rpc(delRoute, { action: 'delete', id: 'full-throttle' })
+  assert.equal(res.status, 200)
+  assert.deepEqual(res.body.value.prompts, [], 'deleting the built-in row empties the list')
+  assert.deepEqual(res.body.value.selectedIds, [], 'its selection goes with it')
+  assert.equal(res.body.value.enabled, false)
+  const delDisk = JSON.parse(await readFile(join(delHome, 'prompt-picker.json'), 'utf8'))
+  assert.equal(delDisk.builtinDeleted, true, 'the built-in deletion persists as state')
+  assert.equal(delDisk.builtin, undefined, 'no override key alongside a deletion')
+
+  res = await rpc(delRoute, { action: 'delete', id: 'full-throttle' })
+  assert.equal(res.status, 400)
+  assert.match(res.body.error.message, /unknown prompt id/, 'a deleted built-in is just an unknown id')
+
+  const delReload = fakeContext()
+  plugin.apply(delReload.ctx, { dshHome: delHome })
+  delReload.spawnAgent()
+  assert.deepEqual((await delReload.services.get('promptPicker').getState()).prompts, [], 'a deleted built-in stays deleted across a restart')
+  assert.equal(delReload.sections[0].text({}), '', 'an empty list injects nothing')
+  await rm(delHome, { recursive: true, force: true })
+
 // --- the browser half is wired to both new actions, and the copy is in both languages ---
 const clientSource = await readFile(new URL('../client.js', import.meta.url), 'utf8')
-for (const needle of ["call('update'", "call('delete'", "call('deleteAll'", "const BUILTIN_ID = 'full-throttle'", 'dsh-ft-act-del', 'dsh-ft-subitem', 'ConfirmDialog', 'clearAllTitle']) {
+for (const needle of ["call('update'", "call('delete'", "call('clear'", "const BUILTIN_ID = 'full-throttle'", 'dsh-ft-row-empty', 'dsh-ft-danger-ghost', 'dsh-ft-subitem', 'ConfirmDialog', 'dialogDelete']) {
   assert.ok(clientSource.includes(needle), 'client.js wires ' + needle)
 }
 
@@ -393,15 +392,15 @@ assert.deepEqual(Object.keys(zh).sort(), Object.keys(en).sort(), 'zh and en dict
 const localeEn = JSON.parse(await readFile(new URL('../locale/en.json', import.meta.url), 'utf8'))
 const localeZh = JSON.parse(await readFile(new URL('../locale/zh.json', import.meta.url), 'utf8'))
 assert.deepEqual(Object.keys(localeEn.actions).sort(), Object.keys(localeZh.actions).sort(), 'locale files declare the same action keys')
-for (const key of ['edit', 'editTip', 'editTitle', 'save', 'delete', 'deleteTip', 'deleteTitle', 'deleteBody', 'deleteConfirm', 'clearAll', 'clearAllTip', 'clearAllTitle', 'clearAllConfirm']) {
+for (const key of ['edit', 'editTitle', 'save', 'delete', 'deleteTitle', 'deleteBody', 'deleteConfirm', 'clearAll', 'clearAllTip', 'dialogDelete']) {
   assert.ok(key in localeEn.actions && key in localeZh.actions, 'locale copy for ' + key)
 }
-for (const key of ['editEntry', 'editTip', 'editTitle', 'editSave', 'deleteEntry', 'deleteTip', 'deleteTitle', 'deleteBody', 'deleteConfirm', 'clearAll', 'clearAllTip', 'clearAllTitle', 'clearAllBody', 'clearAllConfirm', 'subAdd', 'subEdit', 'back']) {
+for (const key of ['addNew', 'subAdd', 'subEdit', 'back', 'editListEmpty', 'clearAll', 'clearAllTip', 'editTitle', 'editSave', 'deleteTitle', 'deleteBody', 'deleteConfirm', 'dialogDelete']) {
   assert.ok(key in zh && key in en, 'client dictionary copy for ' + key)
 }
 
 const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
-assert.equal(pkg.version, '0.9.0', 'the released version registers the section per agent so preset-bound compositions keep it')
+assert.equal(pkg.version, '0.10.0', 'the released version carries the unified New/Edit flow and the deletable built-in row')
 
 // --- a temp DSH_HOME (env, no config override) is honored end to end ---
 const envHome = await mkdtemp(join(tmpdir(), 'prompt-picker-envhome-'))

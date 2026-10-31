@@ -1,21 +1,18 @@
 {
   "meta": {
     "title": "Prompt Picker",
-    "description": "Composer multi-select prompt picker: check several prompts to inject in order, each scoped to main / sub agents or both; the built-in Full Throttle row is editable too (restoring its default text returns it to config), a shared add/edit dialog joins the inline pencil, and rows delete one by one or all at once."
+    "description": "Composer multi-select prompt picker: check several prompts to inject in order, each scoped to main / sub agents or both; a unified New/Edit dialog manages every row (built-in included, all editable and deletable), and Clear all unchecks everything at once."
   },
   "actions": {
     "edit": "Edit",
-    "editTip": "Edit this prompt",
     "editTitle": "Edit prompt",
     "save": "Save changes",
     "delete": "Delete",
-    "deleteTip": "Delete this prompt",
     "deleteTitle": "Delete prompt",
     "deleteBody": "This cannot be undone, and the row is unchecked too.",
     "deleteConfirm": "Delete",
     "clearAll": "Clear all",
-    "clearAllTip": "Delete every saved prompt (the built-in row stays)",
-    "clearAllTitle": "Clear all prompts",
-    "clearAllConfirm": "Delete all"
+    "clearAllTip": "Uncheck every row (nothing is deleted)",
+    "dialogDelete": "Delete this prompt"
   }
 }
