@@ -3,11 +3,14 @@
  *
  * One icon-only composer button opens the prompt menu: every checked row is
  * injected in list order; each row's chip cycles its injection scope
- * (both / main agent only / sub-agents only); a dialog saves new prompts;
- * a saved row can be edited in place (pencil → inline form) or deleted
- * (trash → second confirmation). The built-in row is generated host-side,
- * so it carries no edit/delete entry. All actions go to the same-origin
- * RPC route the Host half registers.
+ * (both / main agent only / sub-agents only); a saved row can be edited in
+ * place (pencil → inline form) or deleted (trash → second confirmation).
+ * The footer's prompt button expands a two-level menu — add a row, or pick
+ * a row to edit in a modal — and beside it Clear all removes every saved
+ * row after its own confirmation. The built-in row is generated host-side
+ * and editable like any other (pencil, chip, footer list); only its trash
+ * is withheld, because the row itself is code. All actions go to the
+ * same-origin RPC route the Host half registers.
  *
  * Theme compatibility contract kept from the switch era: themes (PRTS in
  * particular) restyle every composer-card button with !important declarations,
@@ -43,8 +46,15 @@ window.__ModuleLoader__.load({
         tipOnPrefix: '正在注入：',
         tipError: '提示词状态读取失败，点击重试',
         ariaLabel: '提示词选择',
-        menuClear: '全不选（关闭注入）',
         addNew: '新增提示词…',
+        subAdd: '新增提示词…',
+        subEdit: '修改提示词…',
+        back: '返回',
+        clearAll: '全清',
+        clearAllTip: '删除全部自建提示词（内置行保留）',
+        clearAllTitle: '全清提示词',
+        clearAllBody: '将删除全部 {n} 条自建提示词并取消其勾选，操作不可恢复；内置行保留。',
+        clearAllConfirm: '全部删除',
         addTitle: '新增提示词',
         nameLabel: '名称',
         textLabel: '内容（注入到系统提示词）',
@@ -78,8 +88,15 @@ window.__ModuleLoader__.load({
         tipOnPrefix: 'Injecting: ',
         tipError: 'Prompt state unavailable; click to retry',
         ariaLabel: 'Prompt picker',
-        menuClear: 'Uncheck all (off)',
         addNew: 'New prompt…',
+        subAdd: 'New prompt…',
+        subEdit: 'Edit prompt…',
+        back: 'Back',
+        clearAll: 'Clear all',
+        clearAllTip: 'Delete every saved prompt (the built-in row stays)',
+        clearAllTitle: 'Clear all prompts',
+        clearAllBody: 'This deletes all {n} saved prompts and unchecks them; it cannot be undone. The built-in row stays.',
+        clearAllConfirm: 'Delete all',
         addTitle: 'New prompt',
         nameLabel: 'Name',
         textLabel: 'Text (injected into the system prompt)',
@@ -110,6 +127,9 @@ window.__ModuleLoader__.load({
     }
 
     const CSS = ".dsh-ft-toggle{display:inline-flex;box-sizing:border-box;align-items:center;gap:6px;height:28px;padding:0 8px;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:13px;font-weight:500;line-height:20px;white-space:nowrap;flex:none;cursor:pointer;transition:color .12s,background-color .12s,box-shadow .12s}.dsh-ft-toggle:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.dsh-ft-toggle:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary))}.dsh-ft-toggle:disabled{opacity:.55;cursor:default}.dsh-ft-icon{display:inline-flex;flex:none}.dsh-ft-icon svg{display:block;width:14px;height:14px}.dsh-ft-label{pointer-events:none}.dsh-ft-dot{box-sizing:border-box;flex:none;width:6px;height:6px;border-radius:50%;border:1px solid currentColor;opacity:.55;transition:background-color .12s,box-shadow .12s,opacity .12s}#dsh-prompt-picker-toggle[data-state=on]{color:var(--prts-yellow,var(--dsw-alias-state-business-primary)) !important;background:color-mix(in srgb,var(--prts-yellow,var(--dsw-alias-state-business-primary)) 16%,transparent) !important;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--prts-yellow,var(--dsw-alias-state-business-primary)) 55%,transparent) !important;--prts-control-outline:var(--prts-yellow,var(--dsw-alias-state-business-primary)) !important;--prts-control-surface:color-mix(in srgb,var(--prts-yellow,var(--dsw-alias-state-business-primary)) 20%,var(--prts-panel-raised,transparent)) !important}#dsh-prompt-picker-toggle[data-state=on] .dsh-ft-dot{background:currentColor !important;opacity:1;box-shadow:0 0 5px color-mix(in srgb,currentColor 75%,transparent)}#dsh-prompt-picker-toggle[data-state=error]{color:var(--dsw-alias-state-error-primary,#e5484d) !important}#dsh-prompt-picker-toggle[data-state=error] .dsh-ft-dot{background:currentColor !important;opacity:1}@container (width<=520px){.dsh-ft-label{display:none}}" + '.dsh-ft-wrap{position:relative;display:inline-flex}.dsh-ft-menu{position:absolute;bottom:calc(100% + 6px);left:0;min-width:230px;max-width:340px;max-height:340px;overflow-y:auto;z-index:900;display:flex;flex-direction:column;padding:4px;border-radius:var(--dsw-radius-md,10px);background:var(--dsw-alias-bg-floating,var(--dsw-alias-bg-raised,#fff));border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.25));box-shadow:0 8px 28px rgba(0,0,0,.22);color:var(--dsw-alias-label-primary,inherit);font-size:13px}.dsh-ft-item{display:flex;align-items:center;gap:8px;min-width:0;flex:1;padding:6px 8px;border:0;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:inherit;font-family:inherit;font-size:13px;line-height:20px;text-align:left;white-space:nowrap;overflow:hidden;cursor:pointer}.dsh-ft-item:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.15))}.dsh-ft-item:disabled{opacity:.5;cursor:default}.dsh-ft-row{display:flex;align-items:center;gap:2px;width:100%}.dsh-ft-row .dsh-ft-item{flex:1;min-width:0}.dsh-ft-box{flex:none;box-sizing:border-box;width:14px;height:14px;border:1px solid currentColor;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;line-height:1;opacity:.85}.dsh-ft-row[data-checked=true] .dsh-ft-box{background:var(--dsw-alias-state-business-primary,currentColor);border-color:transparent;color:var(--dsw-alias-state-business-primary-contrast,#fff)}.dsh-ft-chip{flex:none;padding:1px 7px;border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.35));border-radius:999px;background:transparent;color:var(--dsw-alias-label-secondary,inherit);font-family:inherit;font-size:11px;line-height:16px;cursor:pointer}.dsh-ft-chip:hover:not(:disabled){background:var(--dsh-alias-interactive-bg-hover,rgba(127,127,127,.15))}.dsh-ft-chip[data-scope=main]{color:var(--dsw-alias-state-business-primary,inherit);border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary,currentColor) 45%,transparent)}.dsh-ft-chip[data-scope=sub]{color:#2e9e5b;border-color:color-mix(in srgb,#2e9e5b 45%,transparent)}.dsh-ft-chip:disabled{opacity:.5;cursor:default}.dsh-ft-name{overflow:hidden;text-overflow:ellipsis}.dsh-ft-item-add{color:var(--dsw-alias-state-business-primary,inherit)}.dsh-ft-sep{border-top:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.25));margin:4px 2px}.dsh-ft-overlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.38)}.dsh-ft-dialog{width:min(520px,92vw);max-height:86vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:16px;border-radius:var(--dsw-radius-md,12px);background:var(--dsw-alias-bg-floating,var(--dsw-alias-bg-raised,#fff));border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.25));box-shadow:0 12px 40px rgba(0,0,0,.3);color:var(--dsw-alias-label-primary,inherit);font-size:13px}.dsh-ft-dialog-title{font-size:14px;font-weight:600}.dsh-ft-field-label{color:var(--dsw-alias-label-secondary,inherit)}.dsh-ft-input{box-sizing:border-box;width:100%;padding:6px 10px;border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.35));border-radius:var(--dsw-radius-sm,6px);background:var(--dsw-alias-interactive-bg,transparent);color:inherit;font-family:inherit;font-size:13px;line-height:20px}.dsh-ft-input:focus-visible{outline:none;border-color:var(--dsw-alias-state-business-primary,currentcolor);box-shadow:0 0 0 2px var(--dsw-focus-ring-color,transparent)}.dsh-ft-textarea{resize:vertical;min-height:120px}.dsh-ft-seg{display:flex;gap:6px;flex-wrap:wrap}.dsh-ft-seg label{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.35));border-radius:999px;font-size:12px;cursor:pointer}.dsh-ft-seg label:has(input:checked){border-color:var(--dsw-alias-state-business-primary,currentColor);color:var(--dsw-alias-state-business-primary,inherit);background:color-mix(in srgb,var(--dsh-alias-state-business-primary,currentColor) 12%,transparent)}.dsh-ft-seg input{margin:0}.dsh-ft-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}.dsh-ft-secondary,.dsh-ft-primary{border:0;border-radius:var(--dsw-radius-sm,6px);padding:5px 14px;font-family:inherit;font-size:13px;font-weight:500;line-height:20px;cursor:pointer}.dsh-ft-secondary{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.18));color:var(--dsw-alias-label-primary,inherit)}.dsh-ft-primary{background:var(--dsw-alias-state-business-primary,#4c6ef5);color:var(--dsw-alias-state-business-primary-contrast,#fff)}.dsh-ft-primary:disabled,.dsh-ft-secondary:disabled{opacity:.55;cursor:default}.dsh-ft-error{color:var(--dsw-alias-state-error-primary,#e5484d);font-size:12px}.dsh-ft-toggle.dsh-ft-icononly{width:28px;padding:0;justify-content:center}#dsh-prompt-picker-toggle[data-state=on]{color:inherit !important;background:transparent !important;box-shadow:none !important;--prts-control-outline:initial !important;--prts-control-surface:initial !important}' + '.dsh-ft-act{flex:none;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:22px;height:22px;padding:0;border:0;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:var(--dsw-alias-label-secondary,inherit);opacity:.7;cursor:pointer}.dsh-ft-act:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.15));color:var(--dsw-alias-label-primary,inherit);opacity:1}.dsh-ft-act:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary))}.dsh-ft-act:disabled{opacity:.4;cursor:default}.dsh-ft-act svg{display:block;width:13px;height:13px}.dsh-ft-act-del:hover:not(:disabled){color:var(--dsw-alias-state-error-primary,#e5484d)}.dsh-ft-edit{display:flex;flex-direction:column;gap:6px;width:100%;box-sizing:border-box;padding:8px;border-radius:var(--dsw-radius-sm,6px);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.1))}.dsh-ft-edit-title{font-weight:600}.dsh-ft-textarea-sm{min-height:72px}.dsh-ft-edit-actions{display:flex;justify-content:flex-end;gap:6px}.dsh-ft-edit-actions .dsh-ft-secondary,.dsh-ft-edit-actions .dsh-ft-primary{padding:3px 12px}.dsh-ft-confirm-body{color:var(--dsw-alias-label-secondary,inherit);line-height:20px}.dsh-ft-confirm-name{font-weight:600;word-break:break-word}.dsh-ft-danger{background:var(--dsw-alias-state-error-primary,#e5484d);color:var(--dsw-alias-state-business-primary-contrast,#fff)}'
+
+    /** Footer (two-level prompt menu + clear-all) and its submenu, added on top of CSS. */
+    const CSS2 = '.dsh-ft-footer{display:flex;gap:6px;padding:6px}.dsh-ft-footer .dsh-ft-item{flex:1 1 auto;min-width:0}.dsh-ft-item-clear{flex:0 0 auto}.dsh-ft-item-clear:hover:not(:disabled){color:var(--dsw-alias-state-error-primary,#e5484d)}.dsh-ft-item-clear .dsh-ft-icon svg{width:13px;height:13px}.dsh-ft-caret{flex:none;margin-left:auto;font-size:10px;opacity:.65;transition:transform .12s}.dsh-ft-caret[data-open=\'true\']{transform:rotate(180deg)}.dsh-ft-sub{display:flex;flex-direction:column;gap:1px;margin:0 6px 6px 8px;padding:4px 4px 4px 8px;border-left:2px solid var(--dsw-alias-border-faint,rgba(127,127,127,.28))}.dsh-ft-subitem{display:flex;align-items:center;gap:8px;width:100%;padding:5px 8px;border:0;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:var(--dsh-ft-sub-label,var(--dsw-alias-label-secondary,inherit));font-family:inherit;font-size:13px;font-weight:500;line-height:20px;text-align:left;cursor:pointer;transition:color .12s,background-color .12s}.dsh-ft-subitem:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));color:var(--dsw-alias-label-primary,inherit)}.dsh-ft-subitem:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary,#4c7ef3))}.dsh-ft-subitem:disabled{opacity:.55;cursor:default}.dsh-ft-submark{flex:none;width:14px;display:inline-flex;justify-content:center;opacity:.8}.dsh-ft-subname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsh-ft-subscope{flex:none;margin-left:auto;font-size:11px;font-weight:400;opacity:.75}'
 
     /** 16x16 line icons, currentColor; swap value of ICON_NAME to change the button. */
     const ICONS = {
@@ -164,7 +184,7 @@ window.__ModuleLoader__.load({
       const tag = document.createElement('style')
       tag.dataset.plugin = PACKAGE
       tag.dataset.pluginCss = tagId
-      tag.textContent = CSS
+      tag.textContent = CSS + CSS2
       document.head.appendChild(tag)
     }
 
@@ -189,19 +209,30 @@ window.__ModuleLoader__.load({
       return body.value
     }
 
-    /** Small modal to save a new prompt (name + text + scope). */
-    function AddDialog(props) {
-      const { t, busy, onCancel, onSave } = props
-      const [name, setName] = React.useState('')
-      const [text, setText] = React.useState('')
-      const [scope, setScope] = React.useState('both')
+    /**
+     * Modal form for one prompt, shared by add and edit: name + text + scope.
+     * `mode` picks the title and save label; `initial` prefills the fields.
+     * `onSave(name, text, scope)` returns a promise — a rejection keeps the
+     * dialog open and surfaces its message inline instead of closing it.
+     */
+    function PromptDialog(props) {
+      const { t, mode, busy, initial, onCancel, onSave } = props
+      const [name, setName] = React.useState(initial.name)
+      const [text, setText] = React.useState(initial.text)
+      const [scope, setScope] = React.useState(initial.scope)
       const [error, setError] = React.useState('')
+      const [saving, setSaving] = React.useState(false)
+      const editing = mode === 'edit'
+      const working = busy || saving
 
       const submit = () => {
         if (name.trim() === '') { setError(t('errName')); return }
         if (text.trim() === '') { setError(t('errText')); return }
         setError('')
-        onSave(name.trim(), text.trim(), scope)
+        setSaving(true)
+        Promise.resolve(onSave(name.trim(), text.trim(), scope))
+          .catch((failure) => { setError(failure instanceof Error ? failure.message : String(failure)) })
+          .finally(() => setSaving(false))
       }
 
       const seg = (value, labelKey) => h(
@@ -214,25 +245,25 @@ window.__ModuleLoader__.load({
         'div',
         {
           className: 'dsh-ft-overlay',
-          onMouseDown: (event) => { if (event.target === event.currentTarget && !busy) onCancel() },
+          onMouseDown: (event) => { if (event.target === event.currentTarget && !working) onCancel() },
         },
         h(
           'div',
-          { className: 'dsh-ft-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('addTitle') },
-          h('div', { className: 'dsh-ft-dialog-title' }, t('addTitle')),
+          { className: 'dsh-ft-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': editing ? t('editTitle') : t('addTitle') },
+          h('div', { className: 'dsh-ft-dialog-title' }, editing ? t('editTitle') : t('addTitle')),
           h('label', { className: 'dsh-ft-field-label' }, t('nameLabel')),
           h('input', {
             className: 'dsh-ft-input', type: 'text', value: name, autoFocus: true,
             placeholder: t('namePlaceholder'),
             onInput: (event) => setName(event.target.value),
-            onKeyDown: (event) => { if (event.key === 'Escape' && !busy) onCancel() },
+            onKeyDown: (event) => { if (event.key === 'Escape' && !working) onCancel() },
           }),
           h('label', { className: 'dsh-ft-field-label' }, t('textLabel')),
           h('textarea', {
             className: 'dsh-ft-input dsh-ft-textarea', rows: 7, value: text,
             placeholder: t('textPlaceholder'),
             onInput: (event) => setText(event.target.value),
-            onKeyDown: (event) => { if (event.key === 'Escape' && !busy) onCancel() },
+            onKeyDown: (event) => { if (event.key === 'Escape' && !working) onCancel() },
           }),
           h('label', { className: 'dsh-ft-field-label' }, t('scopeLabel')),
           h('div', { className: 'dsh-ft-seg' }, seg('both', 'addScopeBoth'), seg('main', 'addScopeMain'), seg('sub', 'addScopeSub')),
@@ -240,8 +271,8 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { className: 'dsh-ft-dialog-actions' },
-            h('button', { type: 'button', className: 'dsh-ft-secondary', disabled: busy, onClick: onCancel }, t('cancel')),
-            h('button', { type: 'button', className: 'dsh-ft-primary', disabled: busy, onClick: submit }, t('save')),
+            h('button', { type: 'button', className: 'dsh-ft-secondary', disabled: working, onClick: onCancel }, t('cancel')),
+            h('button', { type: 'button', className: 'dsh-ft-primary', disabled: working, onClick: submit }, editing ? t('editSave') : t('save')),
           ),
         ),
       )
@@ -298,23 +329,27 @@ window.__ModuleLoader__.load({
       )
     }
 
-    /** Second confirmation before a saved row is deleted for good. */
+    /**
+     * Second confirmation before a destructive action runs. All copy is
+     * composed by the caller (single-row delete, clear-all), so the dialog
+     * itself stays free of wording decisions.
+     */
     function ConfirmDialog(props) {
-      const { t, busy, name, onCancel, onConfirm } = props
+      const { busy, title, body, detail, confirmLabel, onCancel, onConfirm } = props
       return h(
         'div',
         { className: 'dsh-ft-overlay', onMouseDown: (event) => { if (event.target === event.currentTarget && !busy) onCancel() } },
         h(
           'div',
-          { className: 'dsh-ft-dialog dsh-ft-confirm', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('deleteTitle') },
-          h('div', { className: 'dsh-ft-dialog-title' }, t('deleteTitle')),
-          h('div', { className: 'dsh-ft-confirm-body' }, t('deleteBody')),
-          h('div', { className: 'dsh-ft-confirm-name' }, name),
+          { className: 'dsh-ft-dialog dsh-ft-confirm', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+          h('div', { className: 'dsh-ft-dialog-title' }, title),
+          h('div', { className: 'dsh-ft-confirm-body' }, body),
+          detail !== null && detail !== undefined && detail !== '' ? h('div', { className: 'dsh-ft-confirm-name' }, detail) : null,
           h(
             'div',
             { className: 'dsh-ft-dialog-actions' },
-            h('button', { type: 'button', className: 'dsh-ft-secondary', disabled: busy, onClick: onCancel }, t('cancel')),
-            h('button', { type: 'button', className: 'dsh-ft-primary dsh-ft-danger', disabled: busy, onClick: onConfirm }, t('deleteConfirm')),
+            h('button', { type: 'button', className: 'dsh-ft-secondary', disabled: busy, onClick: onCancel }, props.cancelLabel),
+            h('button', { type: 'button', className: 'dsh-ft-primary dsh-ft-danger', disabled: busy, onClick: onConfirm }, confirmLabel),
           ),
         ),
       )
@@ -332,6 +367,12 @@ window.__ModuleLoader__.load({
       const [editing, setEditing] = React.useState(null)
       /** Row awaiting delete confirmation; null when no confirmation is open. */
       const [confirming, setConfirming] = React.useState(null)
+      /** True while the clear-all confirmation is open. */
+      const [confirmingAll, setConfirmingAll] = React.useState(false)
+      /** Footer submenu phase: null = closed, 'actions' = add/edit choice, 'list' = pick a row to edit. */
+      const [subOpen, setSubOpen] = React.useState(null)
+      /** Saved row loaded into the modal editor from the submenu list; null when closed. */
+      const [dialogEdit, setDialogEdit] = React.useState(null)
       const wrapRef = React.useRef(null)
 
       const refresh = React.useCallback(() => {
@@ -351,6 +392,8 @@ window.__ModuleLoader__.load({
           setOpen(false)
           setEditing(null)
           setConfirming(null)
+          setConfirmingAll(false)
+          setSubOpen(null)
         }
         const onDown = (event) => {
           if (wrapRef.current !== null && !wrapRef.current.contains(event.target)) close()
@@ -383,12 +426,19 @@ window.__ModuleLoader__.load({
         const next = current === 'both' ? 'main' : current === 'main' ? 'sub' : 'both'
         call('setScope', { id: id, scope: next }).catch(() => setPhase('error'))
       }
-      const clearAll = () => {
-        call('clear', {}).catch(() => setPhase('error'))
+      /** Delete every saved row at once; the built-in row (and its checked state) stays. */
+      const clearAllRows = () => {
+        call('deleteAll', {})
+          .then(() => setConfirmingAll(false))
+          .catch(() => { setConfirmingAll(false); setPhase('error') })
       }
       const startEdit = (row) => {
         setConfirming(null)
         setEditing({ id: row.id, name: row.name, text: row.text, scope: row.scope, error: '' })
+      }
+      /** Open the modal editor from the submenu's row list (same fields as the inline pencil). */
+      const startDialogEdit = (row) => {
+        setDialogEdit({ id: row.id, name: row.name, text: row.text, scope: row.scope })
       }
       const saveEdit = (name, text, scope) => {
         const id = editing.id
@@ -408,6 +458,10 @@ window.__ModuleLoader__.load({
 
       const selectedNames = phase === 'ready' && data !== null
         ? data.prompts.filter((p) => data.selectedIds.indexOf(p.id) !== -1).map((p) => p.name)
+        : []
+      /** Saved user rows (the built-in row is code, not user data). */
+      const userRows = phase === 'ready' && data !== null
+        ? data.prompts.filter((p) => p.id !== BUILTIN_ID)
         : []
       const on = selectedNames.length > 0
       const title = phase === 'loading'
@@ -476,7 +530,7 @@ window.__ModuleLoader__.load({
                 onClick: () => cycleScope(p.id, p.scope),
                 title: t('chipTip'),
               }, t(SCOPE_KEYS[p.scope])),
-              builtin ? null : h(
+              h(
                 'button',
                 {
                   type: 'button', className: 'dsh-ft-act', title: t('editTip'),
@@ -500,40 +554,128 @@ window.__ModuleLoader__.load({
           }),
           h('div', { className: 'dsh-ft-sep', role: 'separator' }),
           h(
-            'button',
-            {
-              type: 'button', role: 'menuitem', className: 'dsh-ft-item',
-              disabled: busy || !on, onMouseDown: keepFocus, onClick: clearAll,
-            },
-            h('span', { className: 'dsh-ft-box', 'aria-hidden': 'true' }),
-            h('span', { className: 'dsh-ft-name' }, t('menuClear')),
+            'div',
+            { className: 'dsh-ft-footer' },
+            h(
+              'button',
+              {
+                type: 'button', role: 'menuitem', className: 'dsh-ft-item dsh-ft-item-add',
+                disabled: busy, onMouseDown: keepFocus,
+                'aria-haspopup': 'menu', 'aria-expanded': subOpen !== null,
+                onClick: () => setSubOpen(subOpen === null ? 'actions' : null),
+              },
+              h('span', { className: 'dsh-ft-box', 'aria-hidden': 'true' }, '＋'),
+              h('span', { className: 'dsh-ft-name' }, t('addNew')),
+              h('span', { className: 'dsh-ft-caret', 'aria-hidden': 'true', 'data-open': subOpen !== null ? 'true' : 'false' }, '▾'),
+            ),
+            h(
+              'button',
+              {
+                type: 'button', role: 'menuitem', className: 'dsh-ft-item dsh-ft-item-clear',
+                disabled: busy || userRows.length === 0, onMouseDown: keepFocus,
+                title: t('clearAllTip'),
+                onClick: () => setConfirmingAll(true),
+              },
+              h('span', { className: 'dsh-ft-icon' }, ICONS.trash),
+              h('span', { className: 'dsh-ft-name' }, t('clearAll')),
+            ),
           ),
-          h(
-            'button',
-            {
-              type: 'button', role: 'menuitem', className: 'dsh-ft-item dsh-ft-item-add',
-              disabled: busy, onMouseDown: keepFocus,
-              onClick: () => { setAdding(true); setOpen(false) },
-            },
-            h('span', { className: 'dsh-ft-box', 'aria-hidden': 'true' }, '＋'),
-            h('span', { className: 'dsh-ft-name' }, t('addNew')),
+          subOpen !== null && h(
+            'div',
+            { className: 'dsh-ft-sub', role: 'group', 'aria-label': t('subEdit') },
+            subOpen === 'list'
+              ? [
+                  h(
+                    'button',
+                    {
+                      key: 'back', type: 'button', className: 'dsh-ft-subitem dsh-ft-subback',
+                      disabled: busy, onMouseDown: keepFocus,
+                      onClick: () => setSubOpen('actions'),
+                    },
+                    h('span', { className: 'dsh-ft-submark', 'aria-hidden': 'true' }, '‹'),
+                    h('span', { className: 'dsh-ft-subname' }, t('back')),
+                  ),
+                  data.prompts.map((p) => h(
+                    'button',
+                    {
+                      key: p.id, type: 'button', className: 'dsh-ft-subitem',
+                      disabled: busy, onMouseDown: keepFocus,
+                      title: p.text.length > 90 ? p.text.slice(0, 90) + '…' : p.text,
+                      onClick: () => {
+                        setSubOpen(null)
+                        setOpen(false)
+                        startDialogEdit(p)
+                      },
+                    },
+                    h('span', { className: 'dsh-ft-submark', 'aria-hidden': 'true' }, '✎'),
+                    h('span', { className: 'dsh-ft-subname' }, p.name),
+                    h('span', { className: 'dsh-ft-subscope', 'data-scope': p.scope }, t(SCOPE_KEYS[p.scope])),
+                  )),
+                ]
+              : [
+                  h(
+                    'button',
+                    {
+                      key: 'add', type: 'button', className: 'dsh-ft-subitem',
+                      disabled: busy, onMouseDown: keepFocus,
+                      onClick: () => { setSubOpen(null); setOpen(false); setAdding(true) },
+                    },
+                    h('span', { className: 'dsh-ft-submark', 'aria-hidden': 'true' }, '＋'),
+                    h('span', { className: 'dsh-ft-subname' }, t('subAdd')),
+                  ),
+                  h(
+                    'button',
+                    {
+                      key: 'edit', type: 'button', className: 'dsh-ft-subitem',
+                      disabled: busy, onMouseDown: keepFocus,
+                      onClick: () => setSubOpen('list'),
+                    },
+                    h('span', { className: 'dsh-ft-submark', 'aria-hidden': 'true' }, '✎'),
+                    h('span', { className: 'dsh-ft-subname' }, t('subEdit')),
+                  ),
+                ],
           ),
         ),
         confirming !== null && h(ConfirmDialog, {
-          t: t,
           busy: busy,
-          name: confirming.name,
+          title: t('deleteTitle'),
+          body: t('deleteBody'),
+          detail: confirming.name,
+          confirmLabel: t('deleteConfirm'),
+          cancelLabel: t('cancel'),
           onCancel: () => setConfirming(null),
           onConfirm: deleteRow,
         }),
-        adding && h(AddDialog, {
-          t: t,
+        confirmingAll && h(ConfirmDialog, {
           busy: busy,
+          title: t('clearAllTitle'),
+          body: t('clearAllBody').replace('{n}', String(userRows.length)),
+          detail: null,
+          confirmLabel: t('clearAllConfirm'),
+          cancelLabel: t('cancel'),
+          onCancel: () => setConfirmingAll(false),
+          onConfirm: clearAllRows,
+        }),
+        adding && h(PromptDialog, {
+          t: t,
+          mode: 'add',
+          busy: busy,
+          initial: { name: '', text: '', scope: 'both' },
           onCancel: () => setAdding(false),
-          onSave: (name, text, scope) => {
-            call('add', { name: name, text: text, scope: scope })
-              .then(() => setAdding(false))
-              .catch(() => { setAdding(false); setPhase('error') })
+          onSave: async (name, text, scope) => {
+            await call('add', { name: name, text: text, scope: scope })
+            setAdding(false)
+          },
+        }),
+        dialogEdit !== null && h(PromptDialog, {
+          t: t,
+          mode: 'edit',
+          busy: busy,
+          initial: dialogEdit,
+          onCancel: () => setDialogEdit(null),
+          onSave: async (name, text, scope) => {
+            await call('update', { id: dialogEdit.id, name: name, text: text, scope: scope })
+            setDialogEdit(null)
           },
         }),
       )

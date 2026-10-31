@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "提示词选择器",
-    "description": "输入框工具栏的提示词多选器：勾选多条提示词依次注入系统提示词，每条可设注入对象（主 agent / 子 agent / 全部），内置「火力全开」，保存的提示词可就地修改或删除。"
+    "description": "输入框工具栏的提示词多选器：勾选多条提示词依次注入系统提示词，每条可设注入对象（主 agent / 子 agent / 全部）；内置「火力全开」同样可修改（改回默认即恢复配置文本），新增/修改弹窗与就地铅笔编辑并存，可单行删除或一键全清自建行。"
   },
   "actions": {
     "edit": "修改",
@@ -12,6 +12,10 @@
     "deleteTip": "删除这条提示词",
     "deleteTitle": "删除提示词",
     "deleteBody": "删除后不可恢复，并会同时从已勾选中移除。",
-    "deleteConfirm": "删除"
+    "deleteConfirm": "删除",
+    "clearAll": "全清",
+    "clearAllTip": "删除全部自建提示词（内置行保留）",
+    "clearAllTitle": "全清提示词",
+    "clearAllConfirm": "全部删除"
   }
 }

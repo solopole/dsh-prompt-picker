@@ -5,8 +5,11 @@
  * (`{id, name, text, scope}`, scope = 'both' | 'main' | 'sub'), plus the
  * multi-select `selectedIds` — every selected row is injected, in list
  * order, separated by blank lines. Rows are added, edited and deleted over
- * the same RPC route; the built-in row is generated from config and can
- * be neither edited nor deleted. One dynamic system-prompt section receives
+ * the same RPC route (every user row at once through `deleteAll`); the
+ * built-in row is generated from config, can be edited like any row — the
+ * edit persists as a `builtin` override in the state file and disappears
+ * again once the row is back to its generated default — but cannot be
+ * deleted. One dynamic system-prompt section receives
  * the assembly context; rows whose scope excludes the assembling agent
  * (main agent vs sub-agent) are filtered out. Because the main/sub
  * discrimination rule is being calibrated, every assembly appends one JSON
@@ -156,6 +159,8 @@ class FullThrottleService {
     this.file = join(this.home, STATE_FILE)
     this.debugFile = join(this.home, DEBUG_FILE)
     this.builtin = { id: BUILTIN_ID, name: '火力全开', text: instructionsOf(config), scope: 'both' }
+    /** The freshly generated built-in row; a persisted override is measured against it. */
+    this.builtinDefault = { name: this.builtin.name, text: this.builtin.text, scope: this.builtin.scope }
     this.selectedIds = []
     this.prompts = [this.builtin]
     /** Tail of the serialized write chain: one state-file write at a time. */
@@ -166,11 +171,20 @@ class FullThrottleService {
   async restore() {
     try {
       const parsed = JSON.parse(await readFile(this.file, 'utf8'))
+      this.applyBuiltinOverride(parsed?.builtin)
       this.prompts = promptsOf(parsed, this.builtin)
       this.selectedIds = selectedOf(parsed, this.prompts)
     } catch (error) {
       if (error?.code !== 'ENOENT') this.warn('restore', error)
     }
+  }
+
+  /** Apply a persisted built-in override; each field is validated independently. */
+  applyBuiltinOverride(stored) {
+    if (stored === null || typeof stored !== 'object') return
+    if (typeof stored.name === 'string' && stored.name.trim().length > 0) this.builtin.name = stored.name.trim().slice(0, 60)
+    if (typeof stored.text === 'string' && stored.text.trim().length > 0) this.builtin.text = stored.text
+    if (SCOPES.includes(stored.scope)) this.builtin.scope = stored.scope
   }
 
   warn(scope, error) {
@@ -261,16 +275,17 @@ class FullThrottleService {
   }
 
   /**
-   * Change one user row: name, text and/or scope. Only the fields present in the
-   * patch move; validation matches add (name trim <= 60 and non-empty, text
-   * non-empty, scope through scopeOf). The built-in row is code, not data.
+   * Change one row: name, text and/or scope. Works for user rows and the
+   * built-in row alike — a built-in edit persists as a `builtin` override
+   * (see writeOnce) and rolls back on a failed write. Only the fields present
+   * in the patch move; validation matches add (name trim <= 60 and non-empty,
+   * text non-empty, scope through scopeOf). The built-in row stays undeletable.
    */
   async update(id, patch) {
     await this.ready
     if (typeof id !== 'string' || id.length === 0) throw new Error('id must be a string')
     const row = this.prompts.find((p) => p.id === id)
     if (row === undefined) throw new Error('unknown prompt id')
-    if (id === BUILTIN_ID) throw new Error('the built-in row ' + BUILTIN_ID + ' is read-only')
     const change = patch !== null && typeof patch === 'object' ? patch : {}
     const next = {
       name: change.name === undefined ? row.name : typeof change.name === 'string' ? change.name.trim().slice(0, 60) : '',
@@ -315,6 +330,29 @@ class FullThrottleService {
   }
 
   /**
+   * Remove every user row at once, unchecking each; the built-in row is code,
+   * not data, so it (and its own checked state) survives. A no-op when nothing
+   * is saved — one persist, one atomic rename.
+   */
+  async deleteAll() {
+    await this.ready
+    const userRows = this.prompts.filter((p) => p.id !== BUILTIN_ID)
+    if (userRows.length === 0) return this.snapshot()
+    const previous = { prompts: this.prompts, selectedIds: [...this.selectedIds] }
+    const removed = new Set(userRows.map((p) => p.id))
+    this.prompts = this.prompts.filter((p) => p.id === BUILTIN_ID)
+    this.selectedIds = this.selectedIds.filter((id) => !removed.has(id))
+    try {
+      await this.persist()
+    } catch (error) {
+      this.prompts = previous.prompts
+      this.selectedIds = previous.selectedIds
+      throw error
+    }
+    return this.snapshot()
+  }
+
+  /**
    * Replace the state file through a same-directory rename; readers never see a
    * torn file. Writes are serialized through one chain, so overlapping
    * toggle/update/delete calls cannot interleave their rename/unlink and leave the
@@ -330,14 +368,28 @@ class FullThrottleService {
     return this.writeQueue
   }
 
-  /** One state-file write: unique temporary file, then an atomic rename. */
+  /**
+   * One state-file write: unique temporary file, then an atomic rename. The
+   * built-in row persists only as a `builtin` override while it differs from
+   * the generated default, so an uncustomized row never shadows the config
+   * `instructions` that generated it, and editing back to the default drops
+   * the override key entirely.
+   */
   async writeOnce() {
     await mkdir(dirname(this.file), { recursive: true })
     const temp = this.file + '.' + process.pid.toString(36) + '.' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + '.tmp'
-    await writeFile(temp, JSON.stringify({
+    const payload = {
       selectedIds: this.selectedIds,
       prompts: this.prompts.filter((p) => p.id !== BUILTIN_ID),
-    }), 'utf8')
+    }
+    if (
+      this.builtin.name !== this.builtinDefault.name ||
+      this.builtin.text !== this.builtinDefault.text ||
+      this.builtin.scope !== this.builtinDefault.scope
+    ) {
+      payload.builtin = { name: this.builtin.name, text: this.builtin.text, scope: this.builtin.scope }
+    }
+    await writeFile(temp, JSON.stringify(payload), 'utf8')
     try {
       await rename(temp, this.file)
     } catch (error) {
@@ -390,7 +442,7 @@ async function readBody(req, maxBytes = 256 * 1024) {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-/** Same-origin RPC the browser half calls: GET = state, POST = toggle|clear|add|setScope|update|delete. */
+/** Same-origin RPC the browser half calls: GET = state, POST = toggle|clear|add|setScope|update|delete|deleteAll. */
 class RpcBackend {
   constructor(service) {
     this.service = service
@@ -439,6 +491,8 @@ class RpcBackend {
         this.responseJson(res, 200, { ok: true, value: await this.service.update(body.id, { name: body.name, text: body.text, scope: body.scope }) })
       } else if (body?.action === 'delete') {
         this.responseJson(res, 200, { ok: true, value: await this.service.delete(body.id) })
+      } else if (body?.action === 'deleteAll') {
+        this.responseJson(res, 200, { ok: true, value: await this.service.deleteAll() })
       } else {
         this.responseJson(res, 400, { ok: false, error: { code: 'invalid-request', message: 'unsupported action' } })
       }

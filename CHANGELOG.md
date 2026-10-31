@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.7.0
+
+### Added
+
+- **The built-in row is editable.** The `update` action now accepts
+  `full-throttle` like any row — pencil, scope chip and the footer's edit list
+  all work on it (the footer list shows every row, built-in included). The
+  edit persists as a `builtin` override in `prompt-picker.json` and survives
+  restarts; editing the row back to its generated default drops the override
+  key entirely, so an uncustomized row keeps following config `instructions`.
+  Only deletion stays rejected: the row itself is code.
+
+### Changed
+
+- The footer's edit list now contains every row (the built-in one first), so
+  "Edit prompt…" is never disabled and the unreachable empty hint is gone.
+
+## 0.6.0
+
+### Added
+
+- **Clear all** — the footer's new button (right of the prompt button) removes
+  every saved row after its own second confirmation (`将删除全部 {n} 条自建提示词…`),
+  through the new host RPC action `deleteAll` (`{action:'deleteAll'}`). One
+  serialized persist; the built-in row is code and keeps its own checked state.
+  Disabled while no user row exists.
+- **Two-level prompt menu** — the footer's prompt button now expands
+  `新增提示词… / 修改提示词…` instead of opening the add dialog directly; the
+  edit branch lists every saved row (name + scope chip), and picking one opens
+  the shared dialog prefilled. The per-row inline pencil stays.
+
+### Changed
+
+- **Removed the footer's Uncheck-all item** (unchecking stays one click per row,
+  and `deleteAll` empties the list outright). The host `clear` RPC action is
+  unchanged for API compatibility.
+- The add/edit dialogs merged into one `PromptDialog` (mode add | edit) whose
+  save is awaited: a rejected RPC keeps the dialog open and surfaces the message
+  inline, instead of closing and erroring the whole widget.
+
+### Fixed
+
+- Verified scope routing end to end against a live harness: a `main` row reached
+  only the top session (`why=header:main`), a `sub` row only a spawned child
+  (`why=origin=subagent,delegationDepth=1`), `both` reached both.
+
 ## 0.5.1
 
 ### Fixed
