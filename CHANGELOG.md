@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.9.0
+
+### Fixed
+
+- **Checked rows now reach preset-bound sessions.** The section used to be
+  registered on the app-level context; an agent bound to a preset
+  (`agent-preset-registry → selectedDefault: minimal` and friends) assembles
+  its system prompt inside a group mounted from the preset's plugin
+  whitelist, which drops app-level sections — the callback still ran (the
+  debug log looked healthy) while the text never reached the model, for main
+  agents and sub-agents alike. The section is now registered on each
+  agent's own composition context (`agent/created`, plus a bootstrap pass
+  over `agents.list()` for agents that predate the plugin load, and disposal
+  on `agent/disposed`), the same path the official agent-team sections take;
+  every composition — preset or not — keeps it. The app-level service,
+  state file and RPC route are unchanged.
+
 ## 0.8.0
 
 ### Security

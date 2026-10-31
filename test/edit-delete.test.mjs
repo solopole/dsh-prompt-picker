@@ -5,11 +5,14 @@ import { join } from 'node:path'
 
 const plugin = await import(new URL('../index.js', import.meta.url).href)
 
-/** Minimal Cordis context: provide, effect, inject, logger and the systemPrompt section registry. */
+/** Minimal Cordis context: provide, effect, inject, logger, agents registry and per-agent prompt scopes. */
 function fakeContext() {
   const services = new Map()
   const sections = []
+  const appSections = []
   const routes = []
+  const listeners = new Map()
+  const created = []
   const ctx = {
     logger: { warn() {} },
     provide(name, value) {
@@ -17,6 +20,16 @@ function fakeContext() {
     },
     effect(fn) {
       return fn()
+    },
+    on(event, handler) {
+      if (!listeners.has(event)) listeners.set(event, [])
+      listeners.get(event).push(handler)
+      return () => {}
+    },
+    agents: {
+      list() {
+        return created
+      },
     },
     inject(names, callback) {
       assert.deepEqual(names, ['webServer'])
@@ -37,12 +50,28 @@ function fakeContext() {
     },
     systemPrompt: {
       section(section) {
-        sections.push(section)
+        appSections.push(section)
         return () => {}
       },
     },
   }
-  return { ctx, services, sections, routes }
+  /** One entered agent: its own composition scope plus the agent/created dispatch. */
+  const spawnAgent = () => {
+    const agent = {
+      ctx: {
+        systemPrompt: {
+          section(section) {
+            sections.push(section)
+            return () => {}
+          },
+        },
+      },
+    }
+    created.push(agent)
+    for (const handler of listeners.get('agent/created') ?? []) handler({ agent })
+    return agent
+  }
+  return { ctx, services, sections, appSections, routes, spawnAgent }
 }
 
 /** One POST through the registered route, answered by a recording response stub. */
@@ -86,6 +115,7 @@ const debugFile = join(home, 'prompt-picker-debug.log')
 try {
   const first = fakeContext()
   plugin.apply(first.ctx, { dshHome: home })
+  first.spawnAgent()
   const service = first.services.get('promptPicker')
   const route = first.routes[0]
   const section = first.sections[0]
@@ -255,6 +285,7 @@ try {
   // --- scope routing reads the durable session header, not flat context fields ---
   const third = fakeContext()
   plugin.apply(third.ctx, { dshHome: home })
+  third.spawnAgent()
   const scoped = third.services.get('promptPicker')
   const scopeSection = third.sections[0]
   const addRow = async (name, text, scope) => {
@@ -302,6 +333,7 @@ try {
   }
   const dumpCtx = fakeContext()
   plugin.apply(dumpCtx.ctx, { dshHome: home, debugContext: true })
+  dumpCtx.spawnAgent()
   const dumpService = dumpCtx.services.get('promptPicker')
   await dumpService.toggle('full-throttle')
   dumpCtx.sections[0].text({ agent: { session: { header: CHILD_HEADER }, options: {} } })
@@ -322,6 +354,11 @@ try {
 const clientSource = await readFile(new URL('../client.js', import.meta.url), 'utf8')
 for (const needle of ["call('update'", "call('delete'", "call('deleteAll'", "const BUILTIN_ID = 'full-throttle'", 'dsh-ft-act-del', 'dsh-ft-subitem', 'ConfirmDialog', 'clearAllTitle']) {
   assert.ok(clientSource.includes(needle), 'client.js wires ' + needle)
+}
+
+const hostSource = await readFile(new URL('../index.js', import.meta.url), 'utf8')
+for (const needle of ["ctx.on('agent/created'", "ctx.on('agent/disposed'", 'ctx.agents.list()', "inject = ['agents']"]) {
+  assert.ok(hostSource.includes(needle), 'index.js wires ' + needle)
 }
 
 const vm = await import('node:vm')
@@ -364,7 +401,7 @@ for (const key of ['editEntry', 'editTip', 'editTitle', 'editSave', 'deleteEntry
 }
 
 const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
-assert.equal(pkg.version, '0.8.0', 'the released version carries the same-origin RPC guard and the slim debug log')
+assert.equal(pkg.version, '0.9.0', 'the released version registers the section per agent so preset-bound compositions keep it')
 
 // --- a temp DSH_HOME (env, no config override) is honored end to end ---
 const envHome = await mkdtemp(join(tmpdir(), 'prompt-picker-envhome-'))

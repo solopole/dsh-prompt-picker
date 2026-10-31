@@ -9,7 +9,9 @@
  * built-in row is generated from config, can be edited like any row — the
  * edit persists as a `builtin` override in the state file and disappears
  * again once the row is back to its generated default — but cannot be
- * deleted. One dynamic system-prompt section receives the assembly context;
+ * deleted. One dynamic system-prompt section per agent — registered on the
+ * agent's own composition context, so preset-bound compositions that drop
+ * app-level sections keep it — receives the assembly context;
  * rows whose scope excludes the assembling agent (main agent vs sub-agent)
  * are filtered out. Every assembly appends one slim JSON line (sub, why,
  * injected names) to `$DSH_HOME/prompt-picker-debug.log`; the full context
@@ -556,23 +558,58 @@ class RpcBackend {
 }
 
 /**
- * Register the picker service and its dynamic prompt section for this profile.
+ * Register the picker service for this profile and its prompt section on
+ * every agent's own composition context. The section is per-agent on
+ * purpose: preset-bound agents (agent-preset-registry → select() → mount())
+ * assemble their system prompt inside a group mounted from the preset's
+ * plugin whitelist, which drops sections registered on the app context —
+ * the callback still ran, so the debug log looked healthy while the text
+ * never reached the model. An agent-own registration survives that
+ * rebinding (the same path the official agent-team sections take), for
+ * main agents, teammates and sub-agents alike.
  * @param ctx - owning Cordis context.
- * @param config - this row's config (dshHome, instructions for the built-in row).
+ * @param config - this row's config (dshHome, instructions, debugContext).
  */
 export function apply(ctx, config) {
   const service = new FullThrottleService(ctx, config)
   ctx.provide(SERVICE_KEY, service)
+
+  /** One section registration on one agent's own composition context. */
+  const install = (agent) => {
+    const scoped = agent?.ctx
+    if (scoped === null || typeof scoped !== 'object' || scoped.systemPrompt === undefined) {
+      service.warn('install', new Error('agent context carries no systemPrompt service; skipping'))
+      return undefined
+    }
+    return scoped.systemPrompt.section({
+      name: SECTION_NAME,
+      order: SECTION_ORDER,
+      interpolate: false,
+      text: (context) => service.promptText(context),
+    })
+  }
+
+  /** Live agents already entered before this plugin loaded, plus every later one. */
+  const sections = new Map()
+  const maybeInstall = (agent) => {
+    if (agent === null || typeof agent !== 'object' || sections.has(agent)) return
+    const off = install(agent)
+    if (off !== undefined) sections.set(agent, off)
+  }
+  for (const agent of ctx.agents.list()) maybeInstall(agent)
+  ctx.on('agent/created', ({ agent }) => maybeInstall(agent))
+  ctx.on('agent/disposed', ({ agent }) => {
+    sections.get(agent)?.()
+    sections.delete(agent)
+  })
   ctx.effect(
-    () =>
-      ctx.systemPrompt.section({
-        name: SECTION_NAME,
-        order: SECTION_ORDER,
-        interpolate: false,
-        text: (context) => service.promptText(context),
-      }),
-    'prompt-picker.prompt-section',
+    () => () => {
+      for (const off of sections.values()) off()
+      sections.clear()
+    },
+    'prompt-picker.agent-sections',
   )
+
   ctx.inject(['webServer'], (webCtx) => {
     const rpc = new RpcBackend(service, () => webCtx.webServer.getOrigin())
     webCtx.effect(() => {
@@ -587,4 +624,4 @@ export function apply(ctx, config) {
   void service.ready
 }
 
-export const inject = ['systemPrompt']
+export const inject = ['agents']
