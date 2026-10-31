@@ -1,6 +1,6 @@
 {
   "name": "dsh-prompt-picker",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Prompt picker for DeepSeek Harness: multi-select system-prompt injections with per-row scopes (both/main/sub), a two-level add/edit footer menu, in-place edit of every row including the built-in one, single-row delete and clear-all, one bolt icon in the composer.",
   "type": "module",
   "main": "index.js",

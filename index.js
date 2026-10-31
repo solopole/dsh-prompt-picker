@@ -9,11 +9,13 @@
  * built-in row is generated from config, can be edited like any row — the
  * edit persists as a `builtin` override in the state file and disappears
  * again once the row is back to its generated default — but cannot be
- * deleted. One dynamic system-prompt section receives
- * the assembly context; rows whose scope excludes the assembling agent
- * (main agent vs sub-agent) are filtered out. Because the main/sub
- * discrimination rule is being calibrated, every assembly appends one JSON
- * line to ~/.dsh/full-throttle-debug.log describing the observed context.
+ * deleted. One dynamic system-prompt section receives the assembly context;
+ * rows whose scope excludes the assembling agent (main agent vs sub-agent)
+ * are filtered out. Every assembly appends one slim JSON line (sub, why,
+ * injected names) to `$DSH_HOME/prompt-picker-debug.log`; the full context
+ * dump (keys + ctx) is only written with `debugContext: true`. The RPC
+ * route admits only same-origin callers: matching Origin (when present),
+ * loopback-or-own Host, and JSON Content-Type on POST.
  */
 import { appendFile, mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { appendFileSync, statSync, writeFileSync } from 'node:fs'
@@ -50,6 +52,15 @@ function instructionsOf(config) {
 
 function messageOf(error) {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** Hostname part of an absolute origin URL, lowercase ('' when unparseable). */
+function hostnameOf(url) {
+  try {
+    return new URL(url).hostname.toLowerCase()
+  } catch {
+    return ''
+  }
 }
 
 function scopeOf(value) {
@@ -158,6 +169,8 @@ class FullThrottleService {
     this.home = resolveDshHome(config?.dshHome)
     this.file = join(this.home, STATE_FILE)
     this.debugFile = join(this.home, DEBUG_FILE)
+    /** Full context dump in the debug log; slim line otherwise. */
+    this.debugContext = config?.debugContext === true
     this.builtin = { id: BUILTIN_ID, name: '火力全开', text: instructionsOf(config), scope: 'both' }
     /** The freshly generated built-in row; a persisted override is measured against it. */
     this.builtinDefault = { name: this.builtin.name, text: this.builtin.text, scope: this.builtin.scope }
@@ -398,21 +411,27 @@ class FullThrottleService {
     }
   }
 
-  /** One calibration line per assembly; the file restarts past 256 KiB. */
+  /**
+   * One JSON line per assembly (sub, why, injected names); the compact
+   * context dump (keys + ctx) only with `debugContext: true`. The file
+   * restarts past 256 KiB.
+   */
   logAssembly(context, decision, injected) {
     try {
       try {
         if (statSync(this.debugFile).size > 256 * 1024) writeFileSync(this.debugFile, '')
       } catch {}
-      const line = JSON.stringify({
+      const line = {
         t: new Date().toISOString(),
         sub: decision.sub,
         why: decision.why,
         injected,
-        keys: context !== null && typeof context === 'object' ? Object.keys(context).slice(0, 24) : [],
-        ctx: debugRepr(context),
-      }) + '\n'
-      appendFileSync(this.debugFile, line, 'utf8')
+      }
+      if (this.debugContext) {
+        line.keys = context !== null && typeof context === 'object' ? Object.keys(context).slice(0, 24) : []
+        line.ctx = debugRepr(context)
+      }
+      appendFileSync(this.debugFile, JSON.stringify(line) + '\n', 'utf8')
     } catch {}
   }
 
@@ -442,10 +461,39 @@ async function readBody(req, maxBytes = 256 * 1024) {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-/** Same-origin RPC the browser half calls: GET = state, POST = toggle|clear|add|setScope|update|delete|deleteAll. */
+/** Hostnames a loopback-served RPC also admits. */
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1'])
+
+/**
+ * Same-origin RPC the browser half calls: GET = state, POST = toggle|clear|add|setScope|update|delete|deleteAll.
+ * Cross-site callers are rejected before anything is read: a browser can be
+ * made to POST `text/plain` JSON at this port from any webpage, so Origin
+ * (when present) must equal the server's own origin, Host must be loopback
+ * or the server's own hostname, and POST bodies must be `application/json`.
+ */
 class RpcBackend {
-  constructor(service) {
+  constructor(service, originOf) {
     this.service = service
+    this.originOf = originOf
+  }
+
+  /** '' when the request may pass; otherwise the reason it was refused. */
+  admit(req) {
+    const headers = req.headers ?? {}
+    const expected = this.originOf()
+    const origin = typeof headers.origin === 'string' ? headers.origin : ''
+    if (origin !== '' && origin !== expected) return 'origin ' + origin
+    const host = typeof headers.host === 'string' ? headers.host : ''
+    if (host !== '') {
+      const hostname = host.startsWith('[') ? host.slice(1, host.indexOf(']')) : host.split(':')[0]
+      const ownHostname = hostnameOf(expected)
+      if (hostname.toLowerCase() !== ownHostname && !LOOPBACK_HOSTS.has(hostname.toLowerCase())) return 'host ' + host
+    }
+    if (req.method === 'POST') {
+      const type = String(headers['content-type'] ?? '').toLowerCase()
+      if (!type.startsWith('application/json')) return 'content-type ' + (type === '' ? '(none)' : type)
+    }
+    return ''
   }
 
   responseJson(res, status, body) {
@@ -458,6 +506,11 @@ class RpcBackend {
   }
 
   async handle(req, res) {
+    const denied = this.admit(req)
+    if (denied !== '') {
+      this.responseJson(res, 403, { ok: false, error: { code: 'forbidden', message: 'cross-site request rejected: ' + denied } })
+      return
+    }
     if (req.method === 'GET') {
       try {
         this.responseJson(res, 200, { ok: true, value: await this.service.getState() })
@@ -521,7 +574,7 @@ export function apply(ctx, config) {
     'prompt-picker.prompt-section',
   )
   ctx.inject(['webServer'], (webCtx) => {
-    const rpc = new RpcBackend(service)
+    const rpc = new RpcBackend(service, () => webCtx.webServer.getOrigin())
     webCtx.effect(() => {
       const off = webCtx.webServer.register({
         kind: 'exact',

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.0
+
+### Security
+
+- **Same-origin guard on the RPC route.** A webpage could make a browser POST
+  `text/plain` JSON at the loopback port (no preflight) and silently add or
+  check prompts. `/_dsh/prompt-picker/rpc` now refuses a request before
+  reading anything unless Origin (when present) equals the server's own
+  origin, Host is loopback or the server's own hostname, and POST bodies are
+  `application/json`; refusals answer `403 {code:'forbidden'}` and change
+  nothing.
+
+### Changed
+
+- **Slim debug log by default.** The per-assembly line keeps `t`, `sub`,
+  `why`, `injected`; the context dump (`keys` + `ctx`) is only written with
+  `debugContext: true` in the row config. Fixes the stale
+  `full-throttle-debug.log` filename in the header comment.
+
 ## 0.7.0
 
 ### Added

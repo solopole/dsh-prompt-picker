@@ -25,6 +25,9 @@ function fakeContext() {
           return fn()
         },
         webServer: {
+          getOrigin() {
+            return 'http://127.0.0.1:61958'
+          },
           register(spec) {
             routes.push(spec)
             return () => {}
@@ -43,10 +46,15 @@ function fakeContext() {
 }
 
 /** One POST through the registered route, answered by a recording response stub. */
-async function rpc(route, payload) {
+async function rpc(route, payload, headers = {}) {
+  const merged = Object.assign(
+    { host: '127.0.0.1:61958', origin: 'http://127.0.0.1:61958', 'content-type': 'application/json' },
+    headers,
+  )
   const body = payload === undefined ? [] : [Buffer.from(JSON.stringify(payload))]
   const req = {
-    method: 'POST',
+    method: payload === undefined ? 'GET' : 'POST',
+    headers: merged,
     async *[Symbol.asyncIterator]() {
       for (const chunk of body) yield chunk
     },
@@ -186,6 +194,25 @@ try {
   await service.toggle('full-throttle')
   assert.deepEqual(JSON.parse(await readFile(stateFile, 'utf8')), { selectedIds: [], prompts: [] })
 
+  // --- cross-site callers are refused before anything is read ---
+  res = await rpc(route, { action: 'add', name: 'Evil', text: 'evil text', scope: 'both' }, { origin: 'https://evil.example' })
+  assert.equal(res.status, 403)
+  assert.equal(res.body.error.code, 'forbidden')
+  assert.match(res.body.error.message, /origin https:\/\/evil\.example/)
+
+  res = await rpc(route, { action: 'toggle', id: 'full-throttle' }, { host: 'evil.example:1234' })
+  assert.equal(res.status, 403)
+  assert.match(res.body.error.message, /host evil\.example/)
+
+  res = await rpc(route, { action: 'toggle', id: 'full-throttle' }, { 'content-type': 'text/plain' })
+  assert.equal(res.status, 403)
+  assert.match(res.body.error.message, /content-type text\/plain/)
+
+  res = await rpc(route, undefined, { origin: 'https://evil.example' })
+  assert.equal(res.status, 403, 'a cross-origin GET is refused too')
+
+  assert.deepEqual(JSON.parse(await readFile(stateFile, 'utf8')), { selectedIds: [], prompts: [] }, 'refused requests change nothing')
+
   // --- the built-in row is editable: the edit persists as a `builtin` override, survives a restart, and drops once the generated default is back ---
   res = await rpc(route, { action: 'update', id: 'full-throttle', name: '火力全开（改）', scope: 'main' })
   assert.equal(res.status, 200)
@@ -268,6 +295,22 @@ try {
   const bareLine = lines.concat(JSON.parse((await readFile(debugFile, 'utf8')).trim().split('\n').at(-1))).at(-1)
   assert.equal(bareLine.why, 'default-main:no-header')
 
+  // the default log line is slim: no context dump unless debugContext: true
+  for (const line of lines) {
+    assert.equal(line.ctx, undefined, 'the slim default logs no ctx dump')
+    assert.equal(line.keys, undefined, 'the slim default logs no keys dump')
+  }
+  const dumpCtx = fakeContext()
+  plugin.apply(dumpCtx.ctx, { dshHome: home, debugContext: true })
+  const dumpService = dumpCtx.services.get('promptPicker')
+  await dumpService.toggle('full-throttle')
+  dumpCtx.sections[0].text({ agent: { session: { header: CHILD_HEADER }, options: {} } })
+  const dumpLines = (await readFile(debugFile, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
+  const dumped = dumpLines.at(-1)
+  assert.ok(dumped.ctx, 'debugContext: true restores the context dump')
+  assert.ok(Array.isArray(dumped.keys))
+  await dumpService.toggle('full-throttle')
+
   // service-level guards mirror the RPC surface
   await assert.rejects(() => scoped.update('nope', { name: 'x' }), /unknown prompt id/)
   await assert.rejects(() => scoped.delete('full-throttle'), /cannot be deleted/)
@@ -321,7 +364,7 @@ for (const key of ['editEntry', 'editTip', 'editTitle', 'editSave', 'deleteEntry
 }
 
 const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
-assert.equal(pkg.version, '0.7.0', 'the released version carries the editable built-in row')
+assert.equal(pkg.version, '0.8.0', 'the released version carries the same-origin RPC guard and the slim debug log')
 
 // --- a temp DSH_HOME (env, no config override) is honored end to end ---
 const envHome = await mkdtemp(join(tmpdir(), 'prompt-picker-envhome-'))

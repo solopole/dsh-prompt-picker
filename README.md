@@ -14,6 +14,7 @@ One bolt icon ⚡ in the composer toolbar: click it and check the system prompts
 - **Per-row scope**: all / main agent only / sub-agents only (click the chip at the end of a row; teammate sessions count as sub-agents)
 - **Manage**: add, edit (the built-in "Full Throttle" row included), delete one by one, or clear every saved row at once
 - **Survives restarts**: state lives in `~/.dsh/prompt-picker.json`
+- **Local debug log**: each injection appends one slim JSON line (scope verdict + names) to `~/.dsh/prompt-picker-debug.log`; add `debugContext: true` to the row config for the full context dump. Local only, auto-resets past 256 KiB
 
 ## Install
 

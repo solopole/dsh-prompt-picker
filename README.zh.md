@@ -14,6 +14,7 @@
 - **每条可设作用域**：全部 / 仅主 agent / 仅子 agent（点行尾圆片切换；teammate 会话也算子 agent）
 - **管理**：新增、修改（内置「火力全开」行也能改）、单条删除、一键全清自建条目
 - **重启不丢**：状态保存在 `~/.dsh/prompt-picker.json`
+- **本地调试日志**：每次注入在 `~/.dsh/prompt-picker-debug.log` 记一行极简 JSON（作用域判定与注入名）；需要完整上下文转储时在配置里加 `debugContext: true`。纯本地，超 256KiB 自动清零
 
 ## 安装
 
