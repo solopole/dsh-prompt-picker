@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.1
+
+### Added
+
+- **Chinese detail document for the DSH 0.2.2+ Plugins page.** The zh locale
+  now names `README.zh.md` through `meta.detail`, so a zh display language
+  shows the Chinese README on a bundle's Plugins-page detail view (DSH
+  0.2.2-rc.1+ reads it via `@deepseek-ai/dsh-plugin-detail`; without it the
+  page always falls back to `README.md`). Older DSH versions never read the
+  field, and nothing else changed.
+
 ## 0.10.0
 
 ### Changed

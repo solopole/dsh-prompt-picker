@@ -392,6 +392,7 @@ assert.deepEqual(Object.keys(zh).sort(), Object.keys(en).sort(), 'zh and en dict
 const localeEn = JSON.parse(await readFile(new URL('../locale/en.json', import.meta.url), 'utf8'))
 const localeZh = JSON.parse(await readFile(new URL('../locale/zh.json', import.meta.url), 'utf8'))
 assert.deepEqual(Object.keys(localeEn.actions).sort(), Object.keys(localeZh.actions).sort(), 'locale files declare the same action keys')
+assert.equal(localeZh.meta.detail, 'README.zh.md', 'the zh locale names the Chinese detail document for the 0.2.2+ Plugins page')
 for (const key of ['edit', 'editTitle', 'save', 'delete', 'deleteTitle', 'deleteBody', 'deleteConfirm', 'clearAll', 'clearAllTip', 'dialogDelete']) {
   assert.ok(key in localeEn.actions && key in localeZh.actions, 'locale copy for ' + key)
 }
@@ -400,7 +401,7 @@ for (const key of ['addNew', 'subAdd', 'subEdit', 'back', 'editListEmpty', 'clea
 }
 
 const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
-assert.equal(pkg.version, '0.10.0', 'the released version carries the unified New/Edit flow and the deletable built-in row')
+assert.equal(pkg.version, '0.10.1', 'the released version carries the zh detail document and the 0.2.2-era adoption')
 
 // --- a temp DSH_HOME (env, no config override) is honored end to end ---
 const envHome = await mkdtemp(join(tmpdir(), 'prompt-picker-envhome-'))
